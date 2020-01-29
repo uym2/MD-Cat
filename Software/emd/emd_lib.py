@@ -56,10 +56,10 @@ def init_EM(tree,sampling_time,k,s=1000,refTreeFile=None,eps_tau=EPS_tau):
     else:
         tau = init_tau_from_refTree(tree,refTreeFile,eps_tau=eps_tau)
 
-    omega,phi = discrete_exponential(0.006,k)
+    #omega,phi = discrete_exponential(0.006,k)
     #omega,phi = discretize(mu,k)
     #omega,phi = discretize_uniform(k)
-    #omega,phi = discrete_lognorm(0.006,0.4,k)
+    omega,phi = discrete_lognorm(0.006,0.4,k)
 
     return tau,phi,omega
 
