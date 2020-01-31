@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 #############################################################################
-##  this file is part of LogDate
+##  this file is part of EM_Date
 ##  see "license.txt" for terms and conditions of usage.
 #############################################################################
 

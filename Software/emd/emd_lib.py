@@ -17,9 +17,9 @@ EPS_tau=1e-10
 
 lsd_exec=normpath(join(dirname(realpath(__file__)),"../lsd-0.2/src/lsd")) # temporary solution
 
-def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,s=1000,k=100,df=1e-2,maxIter=500,eps_tau=EPS_tau):
+def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,s=1000,k=100,df=1e-2,maxIter=500,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None):
     M, dt, x = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau)
-    tau, phi, omega = init_EM(tree,smpl_times,k,s=s,refTreeFile=refTreeFile)
+    tau, phi, omega = init_EM(tree,smpl_times,k,s=s,refTreeFile=refTreeFile,init_rate_distr=init_rate_distr)
     
     print("Initialized EM")
     pre_llh = f_ll(x,s,tau,omega,phi)
@@ -33,7 +33,7 @@ def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,s=1000,k=100,df=1e-2,
         print("Estep ...")
         Q = run_Estep(x,s,omega,tau,phi)
         print("Mstep ...")
-        phi,tau = run_Mstep(x,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=True)
+        phi,tau = run_Mstep(x,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau)
         llh = f_ll(x,s,tau,omega,phi)
         #llh = elbo(tau,phi,omega,Q,b,s)
         print("Current llh: " + str(llh))
@@ -50,16 +50,23 @@ def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,s=1000,k=100,df=1e-2,
 
     return tau,omega,phi
 
-def init_EM(tree,sampling_time,k,s=1000,refTreeFile=None,eps_tau=EPS_tau):
+def init_EM(tree,sampling_time,k,s=1000,refTreeFile=None,eps_tau=EPS_tau,init_rate_distr=None):
     if refTreeFile is None:
         mu,tau = run_lsd(tree,sampling_time,s=s,eps_tau=eps_tau)
     else:
         tau = init_tau_from_refTree(tree,refTreeFile,eps_tau=eps_tau)
 
-    #omega,phi = discrete_exponential(0.006,k)
     #omega,phi = discretize(mu,k)
     #omega,phi = discretize_uniform(k)
-    omega,phi = discrete_lognorm(0.006,0.4,k)
+    if init_rate_distr:
+        omega = init_rate_distr.omega
+        phi = init_rate_distr.phi
+    else:    
+        #omega,phi = discrete_lognorm(0.006,0.4,k)
+        omega,phi = discrete_exponential(0.006,k)
+    
+    #omega = [0.001,0.01]
+    #phi = [0.5,0.5]
 
     return tau,phi,omega
 
@@ -257,9 +264,9 @@ def run_Estep(x,s,omega,tau,phi,p_eps=EPS_tau):
         
     return np.matrix(Q)
 
-def run_Mstep(x,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False):
+def run_Mstep(x,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False):
     phi_star = compute_phi_star(Q) if not fixed_phi else phi
-    tau_star = compute_tau_star_cvx(tau,omega,Q,x,s,M,dt,eps_tau=EPS_tau)
+    tau_star = compute_tau_star_cvx(tau,omega,Q,x,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
 
     return phi_star, tau_star
     

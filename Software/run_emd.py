@@ -14,6 +14,7 @@ parser.add_argument("-j","--estParam",required=False,help="Write down the estima
 parser.add_argument("-p","--rep",required=False, help="The number of random replicates for initialization. Default: use lsd initialization instead")
 parser.add_argument("-l","--seqLen",required=False, help="The length of the sequences. Default: 1000")
 parser.add_argument("-f","--refTreeFile",required=False, help="A reference time tree as initial solution. Default: None. LSD will be run internally and used as reference")
+parser.add_argument("-k","--nbin",required=False,help="The number of bins to discretize the rate distribution. Default: 100")
 
 args = vars(parser.parse_args())
 
@@ -24,6 +25,7 @@ infoFile = args["estParam"] if args["estParam"] else (intreeFile + ".emParam")
 timeFile = args["samplingTime"]
 rootAge = float(args["rootAge"]) if args["rootAge"] else None
 seqLen = int(args["seqLen"]) if args["seqLen"] else 1000
+k = int(args["nbin"]) if args["nbin"] else 100
 refTreeFile = args["refTreeFile"]
 
 smpl_times = {}
@@ -39,7 +41,7 @@ with open(intreeFile,"r") as fin:
         with open(infoFile,"w") as finfo:
             for line in fin:
                 tree = read_tree_newick(line)
-                tau,omega,phi = EM_date(tree,smpl_times,root_age=rootAge,s=seqLen,refTreeFile=refTreeFile)
+                tau,omega,phi = EM_date(tree,smpl_times,root_age=rootAge,s=seqLen,refTreeFile=refTreeFile,k=k,fixed_phi=True,fixed_tau=False)
                 fout.write(tree.newick() + "\n")       
                 for (o,p) in zip(omega,phi):
                     finfo.write(str(o) + " " + str(p) + "\n")
