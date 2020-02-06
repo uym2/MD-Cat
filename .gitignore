@@ -3,3 +3,4 @@
 *.tre
 *temp*
 *.pyc
+**/__pycache__
