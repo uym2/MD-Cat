@@ -13,7 +13,7 @@ def simulate_poisson(timeTree,rate_distr,seqLen):
         if node.is_root():
             continue
         # randomly draw a mutation rate from the distribution
-        _,mu = rate_distr.randomize()
+        mu = rate_distr.randomize()
         simulated_mu.append(mu)
         # simulate the Poisson process
         tau = node.edge_length

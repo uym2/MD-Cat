@@ -36,7 +36,23 @@ class multinomial:
     def randomize(self):
         r = random()
         i = binary_search(self.acc,r)
-        return i,self.omega[i]
+        return self.omega[i]
+
+class exponential:
+    def __init__(self,mu):
+        self.mu = mu
+        
+    def randomize(self):
+        return expon.rvs(scale=self.mu)            
+
+class lognormal:
+    def __init__(self,mu,sd):
+        self.sigma = sqrt(log(sd*sd+1))
+        self.scale = 1/sqrt(sd*sd+1)
+        self.mu = mu
+
+    def randomize(self):
+        return self.mu*lognorm.rvs(self.sigma,0,self.scale)  
     
 def discrete_lognorm(mu,sd,k):
     # scipy reference https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.lognorm.html#scipy.stats.lognorm
