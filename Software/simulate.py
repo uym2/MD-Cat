@@ -43,7 +43,7 @@ else:
 tree = read_tree_newick(intreeFile)
 
 for i in range(n):
-    mus = simulate_poisson(tree,rate_distr,s) if do_poisson else simulate_scale(tree,reate_distr)
+    mus = simulate_poisson(tree,rate_distr,s) if do_poisson else simulate_scale(tree,rate_distr)
     write_tree(tree,edge_type='b',outfile=outtreeFile,append=True)
     if outMuFile:
         with open(outMuFile,'w') as fout:
