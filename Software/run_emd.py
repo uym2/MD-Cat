@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
-from emd.emd_lib import *
+#from emd.emd_lib import *
+from emd.emd_normal_lib import *
 from treeswift import *
 import argparse
 
@@ -31,7 +32,6 @@ refTreeFile = args["refTreeFile"]
 smpl_times = {}
 
 with open(timeFile,"r") as fin:
-    fin.readline()
     for line in fin:
         name,time = line.split()
         smpl_times[name] = float(time)
@@ -41,7 +41,12 @@ with open(intreeFile,"r") as fin:
         with open(infoFile,"w") as finfo:
             for line in fin:
                 tree = read_tree_newick(line)
-                tau,omega,phi = EM_date(tree,smpl_times,root_age=rootAge,s=seqLen,refTreeFile=refTreeFile,k=k,fixed_phi=True,fixed_tau=False)
+                nodeIdx = 0
+                for node in tree.traverse_preorder():
+                    if not node.is_leaf():
+                        node.set_label("I" + str(nodeIdx))
+                        nodeIdx += 1                
+                tau,omega,phi = EM_date(tree,smpl_times,root_age=rootAge,s=seqLen,refTreeFile=refTreeFile,k=k,fixed_phi=False,fixed_tau=False)
                 fout.write(tree.newick() + "\n")       
                 for (o,p) in zip(omega,phi):
                     finfo.write(str(o) + " " + str(p) + "\n")
