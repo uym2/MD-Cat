@@ -106,7 +106,8 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
             divTime = days_to_date(node.time)
         else:
             divTime = str(node.time) if not bw_time else str(-node.time)
-        lb += "[t=" + divTime + "]"
+        tag = "[t=" + divTime + "]"
+        lb = lb + tag if lb else tag
         node.set_label(lb)
 
 def init_EM(tree,sampling_time,k,s=1000,refTreeFile=None,eps_tau=EPS_tau,init_rate_distr=None):

@@ -16,6 +16,7 @@ parser.add_argument("-p","--rep",required=False, help="The number of random repl
 parser.add_argument("-l","--seqLen",required=False, help="The length of the sequences. Default: 1000")
 parser.add_argument("-f","--refTreeFile",required=False, help="A reference time tree as initial solution. Default: None. LSD will be run internally and used as reference")
 parser.add_argument("-k","--nbin",required=False,help="The number of bins to discretize the rate distribution. Default: 100")
+parser.add_argument("--assignLabel",action='store_true',help="Assign label to internal nodes. Default: NO")
 
 args = vars(parser.parse_args())
 
@@ -42,10 +43,11 @@ with open(intreeFile,"r") as fin:
             for line in fin:
                 tree = read_tree_newick(line)
                 nodeIdx = 0
-                for node in tree.traverse_preorder():
-                    if not node.is_leaf():
-                        node.set_label("I" + str(nodeIdx))
-                        nodeIdx += 1                
+                if args["assignLabel"]:
+                    for node in tree.traverse_preorder():
+                        if not node.is_leaf():
+                            node.set_label("I" + str(nodeIdx))
+                            nodeIdx += 1                
                 tau,omega,phi = EM_date(tree,smpl_times,root_age=rootAge,s=seqLen,refTreeFile=refTreeFile,k=k,fixed_phi=False,fixed_tau=False)
                 fout.write(tree.newick() + "\n")       
                 for (o,p) in zip(omega,phi):
