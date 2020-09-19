@@ -16,6 +16,8 @@ parser.add_argument("-p","--rep",required=False, help="The number of random repl
 parser.add_argument("-l","--seqLen",required=False, help="The length of the sequences. Default: 1000")
 parser.add_argument("-f","--refTreeFile",required=False, help="A reference time tree as initial solution. Default: None. LSD will be run internally and used as reference")
 parser.add_argument("-k","--nbin",required=False,help="The number of bins to discretize the rate distribution. Default: 100")
+parser.add_argument("--trueTreeFile",required=False,help="For debugging purposes. The true tree in substitutions unit; would be used to compute the variance of the Gaussian model. Default: None")
+parser.add_argument("-u","--pseudo",required=False,help="Pseudo count. Default: 0 if trueTreeFile is specified else 1")
 parser.add_argument("--assignLabel",action='store_true',help="Assign label to internal nodes. Default: NO")
 
 args = vars(parser.parse_args())
@@ -29,7 +31,8 @@ rootAge = float(args["rootAge"]) if args["rootAge"] else None
 seqLen = int(args["seqLen"]) if args["seqLen"] else 1000
 k = int(args["nbin"]) if args["nbin"] else 100
 refTreeFile = args["refTreeFile"]
-
+trueTreeFile = args["trueTreeFile"]
+pseudo = float(args["pseudo"]) if args["pseudo"] else 1.0
 smpl_times = {}
 
 with open(timeFile,"r") as fin:
@@ -48,7 +51,7 @@ with open(intreeFile,"r") as fin:
                         if not node.is_leaf():
                             node.set_label("I" + str(nodeIdx))
                             nodeIdx += 1                
-                tau,omega,phi = EM_date(tree,smpl_times,root_age=rootAge,s=seqLen,refTreeFile=refTreeFile,k=k,fixed_phi=False,fixed_tau=False)
+                tau,omega,phi = EM_date(tree,smpl_times,root_age=rootAge,s=seqLen,refTreeFile=refTreeFile,k=k,fixed_phi=True,fixed_tau=False,pseudo=pseudo,trueTreeFile=trueTreeFile)
                 fout.write(tree.newick() + "\n")       
                 for (o,p) in zip(omega,phi):
                     finfo.write(str(o) + " " + str(p) + "\n")

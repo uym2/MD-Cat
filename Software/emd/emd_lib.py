@@ -62,8 +62,8 @@ def init_EM(tree,sampling_time,k,s=1000,refTreeFile=None,eps_tau=EPS_tau,init_ra
         omega = init_rate_distr.omega
         phi = init_rate_distr.phi
     else:    
-        #omega,phi = discrete_lognorm(0.006,0.4,k)
-        omega,phi = discrete_exponential(0.006,k)
+        omega,phi = discrete_lognorm(0.006,0.4,k)
+        #omega,phi = discrete_exponential(0.006,k)
     
     #omega = [0.001,0.01]
     #phi = [0.5,0.5]
@@ -283,6 +283,7 @@ def f_ll(x,s,tau,omega,phi):
         for j in range(len(omega)):
             omega_j = omega[j]
             phi_j = phi[j]
+            print(x_i,omega_j,tau_i)
             ll_i += poisson.pmf(x_i,s*omega_j*tau_i)*phi_j
         ll += log(ll_i)    
 
