@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-from emd.emd_lib import *
+from emd.emd_normal_lib import *
 from treeswift import *
 import argparse
 from simulator.multinomial import *
@@ -26,7 +26,6 @@ muFile = args["muFile"]
 smpl_times = {}
 
 with open(timeFile,"r") as fin:
-    fin.readline()
     for line in fin:
         name,time = line.split()
         smpl_times[name] = float(time)
@@ -44,15 +43,8 @@ if muFile:
 else:
     init_rate_distr = None    
 
-tree = read_tree_newick(intreeFile)
-M, dt, x = setup_constr(tree,smpl_times,s)
-
-with open(refTreeFile,'r') as fin:
-    for line in fin:
-        fout = open("temp","w")
-        fout.write(line)
-        fout.close()
-        #tau, omega, phi = init_EM(tree,smpl_times,k,s=s,refTreeFile="temp")
-        tau, omega, phi = EM_date(tree,smpl_times,refTreeFile="temp",s=s,k=k,fixed_phi=True,fixed_tau=True,init_rate_distr=init_rate_distr)        
-        llh = f_ll(x,s,tau,omega,phi)
-        print("Likelihood: " + str(llh))
+with open(intreeFile,'r') as fin:
+    for treeStr in fin:
+        tree = read_tree_newick(treeStr)
+        _,_,b,stds = setup_constr(tree,smpl_times,s)
+        tau, omega, phi = EM_date(tree,smpl_times,refTreeFile=refTreeFile,maxIter=1,s=s,k=k,fixed_phi=True,fixed_tau=True,init_rate_distr=init_rate_distr)        

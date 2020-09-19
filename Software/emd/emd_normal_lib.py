@@ -19,6 +19,7 @@ EPSILON=1e-4
 INF = float("inf")
 PSEUDO = 1.0
 MIN_b=0
+MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 
 #lsd_exec=normpath(join(dirname(realpath(__file__)),"../lsd-0.2/src/lsd")) # temporary solution
 lsd_exec="/calab_data/mirarab/home/umai/my_gits/EM_Date/Software/lsd-0.2/bin/lsd.exe"
@@ -324,12 +325,13 @@ def log_sum_exp(numlist):
     # using log-trick to compute log(sum(exp(x) for x in numlist))
     # mitigate the problem of underflow
     try:
-        minx = min([x for x in numlist if x > -700])
+        minx = min([x for x in numlist if x > MIN_ll])
     except:
-        return -INF    
-    s = sum(exp(x-minx) for x in numlist if x > -700)
+        return log(len(numlist)) + MIN_ll
+    s = sum(exp(x-minx) for x in numlist if x > MIN_ll)
     #print(min(numlist),max(numlist),exp(max(numlist)-min(numlist)))
-    return minx + log(s) if s > 0 else -INF
+    result = minx + log(s) if s > 0 else log(len(numlist)) + MIN_ll
+    return result
 
 def run_Estep(b,s,omega,tau,phi,stds,p_eps=EPS_tau,pseudo=PSEUDO):
     N = len(b)
@@ -370,7 +372,9 @@ def f_ll(b,s,tau,omega,phi,stds,pseudo=PSEUDO):
             var_ij = tau_i*omega_j/s
             #ll_i[j] = log(1/sqrt(2*pi)/std_i)-(b_i-tau_i*omega_j)**2/2/var_i + log(phi_j)
             ll_i[j] = log(1/sqrt(2*pi)/sqrt(var_ij))-(b_i-tau_i*omega_j)**2/2/var_ij + log(phi_j)
-        ll += log_sum_exp(ll_i)
+        #print(log_sum_exp(ll_i))
+        result = log_sum_exp(ll_i)
+        ll += result
     return ll
 
 def compute_phi_star(Q):

@@ -283,7 +283,6 @@ def f_ll(x,s,tau,omega,phi):
         for j in range(len(omega)):
             omega_j = omega[j]
             phi_j = phi[j]
-            print(x_i,omega_j,tau_i)
             ll_i += poisson.pmf(x_i,s*omega_j*tau_i)*phi_j
         ll += log(ll_i)    
 
