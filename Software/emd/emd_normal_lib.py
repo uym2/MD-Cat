@@ -24,8 +24,20 @@ MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 #lsd_exec=normpath(join(dirname(realpath(__file__)),"../lsd-0.2/src/lsd")) # temporary solution
 lsd_exec="/calab_data/mirarab/home/umai/my_gits/EM_Date/Software/lsd-0.2/bin/lsd.exe"
 
-def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1000,k=100,df=0.01,maxIter=200,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO):
+
+def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1000,k=100,df=0.01,maxIter=500,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO):
     M, dt, b, stds = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile)
+    ############################
+    #with open("/calab_data/mirarab/home/umai/EMDate/D750_11_10/rep001/exp_100bins_gaussian/stds.txt",'r') as fin:
+    #    lb2sm = {}
+    #    for line in fin:
+    #        lb,sm = line.strip().split()
+    #        lb2sm[lb] = float(sm)
+
+    #for node in tree.traverse_preorder():
+    #    if not node.is_root():
+    #        stds[node.idx] = lb2sm[node.get_label()]     
+    #############################
     tau, phi, omega = init_EM(tree,smpl_times,k,s=s,refTreeFile=refTreeFile,init_rate_distr=init_rate_distr)
     print("Initialized EM")
     pre_llh = f_ll(b,s,tau,omega,phi,stds,pseudo=pseudo)
@@ -41,8 +53,8 @@ def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1
         print("Current llh: " + str(llh))
         curr_df = None if pre_llh is None else llh - pre_llh
         print("Current df: " + str(curr_df))
-        #if curr_df is not None and curr_df < df:
-        #    break
+        if curr_df is not None and curr_df < df:
+            break
         pre_llh = llh    
 
     # convert branch length to time unit
@@ -399,6 +411,7 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
             continue
         for j in range(k):
             w_ij = omega[j]*tau[i] # weight by the variance multiplied with s; use previous tau to estimate
+            #w_ij = stds[i]*stds[i]*s
             Pd[i] += Q[i][j]*omega[j]**2/w_ij
             q[i] -= Q[i][j]*omega[j]/w_ij
         #Pd[i] /= (b[i] + pseudo/s)

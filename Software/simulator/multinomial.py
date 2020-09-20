@@ -71,6 +71,8 @@ def discrete_exponential(mu,k):
     omega = expon.ppf(p,scale=mu)
     density = expon.pdf(omega,scale=mu)
     phi = density/sum(density)
+    for (o,p) in zip(omega,phi):
+        print(o,p)
     
     return multinomial(omega,phi)
 

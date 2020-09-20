@@ -51,7 +51,7 @@ with open(intreeFile,"r") as fin:
                         if not node.is_leaf():
                             node.set_label("I" + str(nodeIdx))
                             nodeIdx += 1                
-                tau,omega,phi = EM_date(tree,smpl_times,root_age=rootAge,s=seqLen,refTreeFile=refTreeFile,k=k,fixed_phi=True,fixed_tau=False,pseudo=pseudo,trueTreeFile=trueTreeFile)
+                tau,omega,phi = EM_date(tree,smpl_times,root_age=rootAge,s=seqLen,refTreeFile=refTreeFile,k=k,fixed_phi=False,fixed_tau=False,pseudo=pseudo,trueTreeFile=trueTreeFile)
                 fout.write(tree.newick() + "\n")       
                 for (o,p) in zip(omega,phi):
                     finfo.write(str(o) + " " + str(p) + "\n")

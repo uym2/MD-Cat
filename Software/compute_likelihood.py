@@ -47,4 +47,4 @@ with open(intreeFile,'r') as fin:
     for treeStr in fin:
         tree = read_tree_newick(treeStr)
         _,_,b,stds = setup_constr(tree,smpl_times,s)
-        tau, omega, phi = EM_date(tree,smpl_times,refTreeFile=refTreeFile,maxIter=1,s=s,k=k,fixed_phi=True,fixed_tau=True,init_rate_distr=init_rate_distr)        
+        tau, omega, phi = EM_date(tree,smpl_times,refTreeFile=refTreeFile,maxIter=500,s=s,k=k,fixed_phi=False,fixed_tau=True,init_rate_distr=init_rate_distr)        
