@@ -14,7 +14,7 @@ from scipy.sparse import csr_matrix
 import cvxpy as cp
 from emd.quadprog_solvers import *
 
-EPS_tau=1e-8
+EPS_tau=1e-5
 EPSILON=1e-4
 INF = float("inf")
 PSEUDO = 1.0
@@ -47,14 +47,16 @@ def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1
         print("Estep ...")
         Q = run_Estep(b,s,omega,tau,phi,stds,pseudo=pseudo)
         print("Mstep ...")
-        phi,tau = run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
-        llh = f_ll(b,s,tau,omega,phi,stds,pseudo=pseudo)
+        next_phi,next_tau = run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
+        llh = f_ll(b,s,next_tau,omega,next_phi,stds,pseudo=pseudo)
         #llh = elbo(tau,phi,omega,Q,b,s)
         print("Current llh: " + str(llh))
         curr_df = None if pre_llh is None else llh - pre_llh
         print("Current df: " + str(curr_df))
         if curr_df is not None and curr_df < df:
             break
+        phi = next_phi
+        tau = next_tau    
         pre_llh = llh    
 
     # convert branch length to time unit
@@ -184,18 +186,20 @@ def discrete_lognorm(mu,sd,k):
     sigma = sqrt(log(sd*sd+1))
     scale = 1/sqrt(sd*sd+1)
     nu = lognorm.ppf(p,sigma,0,scale)
-    density = lognorm.pdf(nu,sigma,0,scale)
+    #density = lognorm.pdf(nu,sigma,0,scale)
     omega = mu*nu
-    phi = density/sum(density)
-    
+    #phi = density/sum(density)
+    phi = [1.0/k]*k
+
     return omega,phi 
 
 def discrete_exponential(mu,k):
     p = [i/(k+1) for i in range(1,k+1)] 
     omega = expon.ppf(p,scale=mu)
-    density = expon.pdf(omega,scale=mu)
-    phi = density/sum(density)
-    
+    #density = expon.pdf(omega,scale=mu)
+    #phi = density/sum(density)
+    phi = [1.0/k]*k
+
     return omega,phi 
 
 def get_tree_bitsets(tree):
@@ -368,7 +372,8 @@ def run_Estep(b,s,omega,tau,phi,stds,p_eps=EPS_tau,pseudo=PSEUDO):
 def run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,pseudo=PSEUDO):
     phi_star = compute_phi_star(Q) if not fixed_phi else phi
     tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
-
+    #tau_star = compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
+    
     return phi_star, tau_star
     
 def f_ll(b,s,tau,omega,phi,stds,pseudo=PSEUDO):
@@ -400,6 +405,34 @@ def compute_phi_star(Q):
             N += 1
     return [x/N for x in phi]    
 
+def compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEUDO):
+    N = len(b)
+    k = len(omega)
+    
+    def f(x,*args):
+    # objective function
+        Q,omega,b = args
+        return sum(Q[i][j]*s/omega[j]/x[i]*(b[i]-omega[j]*x[i])**2 + Q[i][j]/2*log(omega[j]*x[i]) for i in range(N) for j in range(k))
+    
+    def g(x,*args):
+    # Jacobian
+        Q,omega,b = args
+        return np.array([sum(q_i[j]*s*(omega[j]-b_i**2/omega[j]/tau_i**2) + q_i[j]/2/tau_i for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
+    
+    def h(x,*args):
+    # Hessian
+        Q,omega,b = args
+        return diags([sum(2*q_i[j]*s*b_i**2/omega[j]/tau_i**3 - q_i[j]/2/tau_i**2 for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
+    
+    linear_constraint = LinearConstraint(csr_matrix(M),dt,dt,keep_feasible=True)
+    bounds = Bounds(np.zeros(N)+eps_tau,np.zeros(N)+1e5,keep_feasible=True)
+    args = (Q,omega,b)
+
+    result = minimize(fun=f,method="trust-constr",x0=tau,args=args,bounds=bounds,constraints=[linear_constraint],options={'disp':True,'verbose':3},jac=g,hess=h)
+    tau_star = result.x
+
+    return tau_star
+
 def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEUDO):
     N = len(b)
     k = len(omega)
@@ -423,7 +456,7 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
     P = diag(Pd)        
     #param_1 = cp.Parameter(q.shape,nonneg=True,value=q)
     #param_2 = cp.Parameter(P.shape,nonneg=True,value=P)
-    N = len(tau)
+    #N = len(tau)
     var_tau = cp.Variable(N)
        
     objective = cp.Minimize(cp.quad_form(var_tau,P) + q.T @ var_tau)
@@ -436,29 +469,3 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
 
     return tau_star
 
-def compute_tau_star_cvxopt(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,pseudo=PSEUDO):
-    N = len(b)
-    k = len(omega)
-    Pd = np.zeros(N)
-    q = np.zeros(N)
-
-    for i in range(N):
-        for j in range(k):
-            Pd[i] += Q[i][j]*omega[j]**2
-            q[i] -= Q[i][j]*omega[j]
-        Pd[i] /= (b[i] + pseudo/s)
-        q[i] *= (2*b[i]/(b[i]+pseudo/s))
-          
-    P = diag(Pd)        
-    G = -np.identity(N)  
-    h = np.zeros(N) + eps_tau
-    
-    #tau_star = cvxopt_solve_qp(P,q)
-    tau_star = quadprog_solve_qp(P,q,G,h,np.matrix(M),dt)
-    #tau_star = cvxopt_solve_qp(P,q,G,h,np.matrix(M),dt)
-    
-    print(np.matmul(np.matmul(np.transpose(tau),P),tau)+np.matmul(np.transpose(q),tau))
-    print(np.matmul(np.matmul(np.transpose(tau_star),P),tau_star)+np.matmul(np.transpose(q),tau_star))
-    #print(np.matmul(np.matrix(M),tau)-np.array(dt))
-
-    return tau_star 
