@@ -45,6 +45,7 @@ def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1
     for i in range(1,maxIter+1):
         print("EM iteration " + str(i))
         print("Estep ...")
+        #Q = run_Estep_naive(b,s,omega,tau,phi,stds,pseudo=pseudo)
         Q = run_Estep(b,s,omega,tau,phi,stds,pseudo=pseudo)
         print("Mstep ...")
         next_phi,next_tau = run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
@@ -364,9 +365,26 @@ def run_Estep(b,s,omega,tau,phi,stds,p_eps=EPS_tau,pseudo=PSEUDO):
         for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
             var_ij = omega_j*tau_i/s
             #lq_i[j] = -(b_i-omega_j*tau_i)**2/2/var_i + log(phi_j)
-            lq_i[j] = -(b_i-omega_j*tau_i)**2/2/var_ij + log(phi_j)
+            lq_i[j] = -(b_i-omega_j*tau_i)**2/2/var_ij + log(phi_j) - log(var_ij)/2
         s_lqi = log_sum_exp(lq_i)
         Q.append([exp(x-s_lqi) for x in lq_i])
+    return Q
+
+def run_Estep_naive(b,s,omega,tau,phi,stds,p_eps=EPS_tau,pseudo=PSEUDO):
+    N = len(b)
+    k = len(omega)
+    Q = []
+
+    for b_i,tau_i,std_i in zip(b,tau,stds): 
+        if b_i is None:
+            Q.append(None)
+            continue
+        q_i = [0]*k
+        for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
+            var_ij = omega_j*tau_i/s
+            q_i[j] = norm.pdf(b_i,omega_j*tau_i,sqrt(var_ij))*phi_j
+        s_qi = sum(q_i)
+        Q.append([q_ij/s_qi for q_ij in q_i])
     return Q
 
 def run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,pseudo=PSEUDO):

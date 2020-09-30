@@ -5,17 +5,17 @@ from math import sqrt
 
 eps=0.01
 
-def simulate_scale(timeTree,rate_distr):
+def simulate_scale(timeTree,rate_distr,seqLen=None):
 # the timeTree must have edges in unit of time
 # rate_distr is an instance of multinomial class
 # each node in the timeTree will have an extra attribute b which is the branch length in substitution unit
-    simulated_mu = []
+    simulated_mu = {}
     for node in timeTree.traverse_preorder():
         if node.is_root():
             continue
         # randomly draw a mutation rate from the distribution
         mu = rate_distr.randomize()
-        simulated_mu.append(mu)
+        simulated_mu[node.get_label()] = mu
         # simulate the Poisson process
         tau = node.edge_length
         node.b = mu*tau

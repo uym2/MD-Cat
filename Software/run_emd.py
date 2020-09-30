@@ -4,6 +4,7 @@
 from emd.emd_normal_lib import *
 from treeswift import *
 import argparse
+from simulator.multinomial import *
 
 parser = argparse.ArgumentParser()
 
@@ -19,6 +20,8 @@ parser.add_argument("-k","--nbin",required=False,help="The number of bins to dis
 parser.add_argument("--trueTreeFile",required=False,help="For debugging purposes. The true tree in substitutions unit; would be used to compute the variance of the Gaussian model. Default: None")
 parser.add_argument("-u","--pseudo",required=False,help="Pseudo count. Default: 0 if trueTreeFile is specified else 1")
 parser.add_argument("--assignLabel",action='store_true',help="Assign label to internal nodes. Default: NO")
+parser.add_argument("--clockFile",required=False,help="A file that defines a customized (discretized) clock model")
+parser.add_argument("--fixedPhi",action='store_true',help="Fix the probability distribution")
 
 args = vars(parser.parse_args())
 
@@ -40,6 +43,18 @@ with open(timeFile,"r") as fin:
         name,time = line.split()
         smpl_times[name] = float(time)
 
+if args["clockFile"] is not None:
+    omega = []
+    phi = []
+    with open(args["clockFile"]) as fin:
+        for line in fin:
+            o,p = line.strip().split()
+            omega.append(float(o))
+            phi.append(float(p))
+    init_rate_distr = multinomial(omega,phi)
+else:
+    init_rate_distr = None        
+
 with open(intreeFile,"r") as fin:
     with open(outtreeFile,"w") as fout:
         with open(infoFile,"w") as finfo:
@@ -51,7 +66,7 @@ with open(intreeFile,"r") as fin:
                         if not node.is_leaf():
                             node.set_label("I" + str(nodeIdx))
                             nodeIdx += 1                
-                tau,omega,phi = EM_date(tree,smpl_times,root_age=rootAge,s=seqLen,refTreeFile=refTreeFile,k=k,fixed_phi=False,fixed_tau=False,pseudo=pseudo,trueTreeFile=trueTreeFile)
+                tau,omega,phi = EM_date(tree,smpl_times,root_age=rootAge,s=seqLen,refTreeFile=refTreeFile,k=k,fixed_phi=args["fixedPhi"],fixed_tau=False,pseudo=pseudo,trueTreeFile=trueTreeFile,init_rate_distr=init_rate_distr)
                 fout.write(tree.newick() + "\n")       
                 for (o,p) in zip(omega,phi):
                     finfo.write(str(o) + " " + str(p) + "\n")

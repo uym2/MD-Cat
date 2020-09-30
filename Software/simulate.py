@@ -13,6 +13,7 @@ parser.add_argument("-u","--mu",required=False, help="Expected mutation rate. De
 parser.add_argument("-s","--seqLen",required=False, help="Sequence length. Default: 1000")
 parser.add_argument("-n","--nsample",required=False,help="Number of samples to be generated. Default: 1")
 parser.add_argument("-k","--nbin",required=False,help="The number of bins to discretize the rate distribution. Default: Do not discretize (i.e. k = inf)")
+parser.add_argument("-f","--inMuFile",required=False,help="The file that defines a customized categorical clock model. Will override -u, -k, and -m")
 parser.add_argument("-U","--outMuFile",required=False,help="Write the simulated mu values to this file. Default: None")
 parser.add_argument("-b","--brError",required=False,help="Model of the branch error. Can be either Gaussian (lsd's model), Poisson (LF's model), or None (no branch error). Default: None")
 
@@ -30,8 +31,18 @@ outMuFile = args["outMuFile"]
 brError = args["brError"] if args["brError"] else "Const"
 #do_poisson = args["poisson"]
 
-model_args = model.split("_")
-if model_args[0] == 'lnorm':
+model_args = model.split("_") if model else [None,None]
+
+if args["inMuFile"] is not None:
+    omega = []
+    phi = []
+    with open(args["inMuFile"],'r') as fin:
+        for line in fin:
+            o,p = line.strip().split()
+            omega.append(float(o))
+            phi.append(float(p))
+    rate_distr = multinomial(omega,phi)        
+elif model_args[0] == 'lnorm':
     sd = float(model_args[1])
     rate_distr = discrete_lognorm(mu,sd,k) if k is not None else lognormal(mu,sd)
 elif model_args[0] == 'exp':
