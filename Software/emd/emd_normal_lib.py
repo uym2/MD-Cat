@@ -13,7 +13,7 @@ from scipy.sparse import diags
 from scipy.sparse import csr_matrix
 import cvxpy as cp
 from emd.quadprog_solvers import *
-from random import uniform
+from random import uniform, random
 
 EPS_tau=1e-5
 EPSILON=1e-4
@@ -25,21 +25,31 @@ MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 #lsd_exec=normpath(join(dirname(realpath(__file__)),"../lsd-0.2/src/lsd")) # temporary solution
 lsd_exec="/calab_data/mirarab/home/umai/my_gits/EM_Date/Software/lsd-0.2/bin/lsd.exe"
 
+def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,k=100,nrep=100,maxIter=100,refTreeFile=None,fixed_phi=False,fixed_tau=False):
+    best_llh = -float("inf")
+    best_tree = None
+    best_phi = None
+    best_omega = None
+    for r in range(nrep):
+        print("Solving EM with init point + " + str(r))
+        new_tree = read_tree_newick(tree.newick())
+        try:
+            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=None,maxIter=maxIter,refTreeFile=refTreeFile,fixed_phi=fixed_phi,fixed_tau=fixed_tau)
+            print("New llh: " + str(llh))
+            print([(o,p) for (o,p) in zip(omega,phi)])
+            print(new_tree.newick())  
+            if llh > best_llh:
+                best_llh = llh  
+                best_tree = new_tree
+                best_phi = phi
+                best_omega = omega
+        except:
+            print("Failed to optimize using this init point!")        
+    return best_tree,best_llh,best_phi,best_omega        
 
-def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1000,k=100,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO):
+def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO):
     M, dt, b, stds = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile)
-    ############################
-    #with open("/calab_data/mirarab/home/umai/EMDate/D750_11_10/rep001/exp_100bins_gaussian/stds.txt",'r') as fin:
-    #    lb2sm = {}
-    #    for line in fin:
-    #        lb,sm = line.strip().split()
-    #        lb2sm[lb] = float(sm)
-
-    #for node in tree.traverse_preorder():
-    #    if not node.is_root():
-    #        stds[node.idx] = lb2sm[node.get_label()]     
-    #############################
-    tau, phi, omega = init_EM(tree,smpl_times,k,s=s,refTreeFile=refTreeFile,init_rate_distr=init_rate_distr)
+    tau, phi, omega = init_EM(tree,smpl_times,k=k,input_omega=input_omega,s=s,refTreeFile=refTreeFile,init_rate_distr=init_rate_distr)
     print("Initialized EM")
     pre_llh = f_ll(b,s,tau,omega,phi,stds,pseudo=pseudo)
     print("Initial likelihood: " + str(pre_llh))
@@ -67,13 +77,13 @@ def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1
         if not node.is_root():
             node.set_edge_length(tau[node.idx])
             node.mu = sum(o*p for (o,p) in zip(omega,Q[node.idx]))
-        else:
-            node.mu = sum(o*p for (o,p) in zip(omega,phi))
+        #else:
+        #    node.mu = sum(o*p for (o,p) in zip(omega,phi))
 
     # compute divergence times
     compute_divergence_time(tree,smpl_times)
 
-    return tau,omega,phi
+    return tau,omega,phi,llh
 
 def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
 # compute and place the divergence time onto the node label of the tree
@@ -128,16 +138,19 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
             divTime = days_to_date(node.time)
         else:
             divTime = str(node.time) if not bw_time else str(-node.time)
-        tag = "[t=" + divTime + ",mu=" + str(node.mu) + "]"
+        tag = "[t=" + divTime + ",mu=" + str(node.mu) + "]" if not node.is_root() else "[t=" + divTime + "]"
         lb = lb + tag if lb else tag
         node.set_label(lb)
 
-def init_EM(tree,sampling_time,k,s=1000,refTreeFile=None,eps_tau=EPS_tau,init_rate_distr=None):
-    #omega,phi = discretize(mu,k)
-    #omega,phi = discretize_uniform(k)
+def init_EM(tree,sampling_time,k=100,s=1000,input_omega=None,refTreeFile=None,eps_tau=EPS_tau,init_rate_distr=None):
     if init_rate_distr:
         omega = init_rate_distr.omega
         phi = init_rate_distr.phi
+    elif input_omega:
+        omega = input_omega
+        phi = [random() for p in range(len(input_omega))]  
+        sp = sum(phi)
+        phi = [p/sp for p in phi] 
     else:    
         #omega,phi = discrete_lognorm(0.006,0.4,k)
         omega,phi = discrete_exponential(0.006,k)
@@ -378,9 +391,17 @@ def run_Estep(b,s,omega,tau,phi,stds,p_eps=EPS_tau,pseudo=PSEUDO):
         for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
             var_ij = omega_j*tau_i/s
             #lq_i[j] = -(b_i-omega_j*tau_i)**2/2/var_i + log(phi_j)
-            lq_i[j] = -(b_i-omega_j*tau_i)**2/2/var_ij + log(phi_j) - log(var_ij)/2
+            #lq_i[j] = -(b_i-omega_j*tau_i)**2/2/var_ij + log(phi_j) - log(var_ij)/2
+            lq_i[j] = -(b_i-omega_j*tau_i)**2*s/2/omega_j/tau_i + log(phi_j) - (log(omega_j)+log(tau_i)-log(s))/2
         s_lqi = log_sum_exp(lq_i)
-        Q.append([exp(x-s_lqi) for x in lq_i])
+        q_i = [exp(x-s_lqi) for x in lq_i]
+        s_qi = sum(q_i)
+        #Q.append([q/s_qi for q in q_i])
+        if s_qi < 1e-10:
+            q_i = [1.0/k]*k
+        else:
+            q_i = [x/s_qi for x in q_i]
+        Q.append(q_i)
     return Q
 
 def run_Estep_naive(b,s,omega,tau,phi,stds,p_eps=EPS_tau,pseudo=PSEUDO):
@@ -419,7 +440,8 @@ def f_ll(b,s,tau,omega,phi,stds,pseudo=PSEUDO):
         for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
             var_ij = tau_i*omega_j/s
             #ll_i[j] = log(1/sqrt(2*pi)/std_i)-(b_i-tau_i*omega_j)**2/2/var_i + log(phi_j)
-            ll_i[j] = log(1/sqrt(2*pi)/sqrt(var_ij))-(b_i-tau_i*omega_j)**2/2/var_ij + log(phi_j)
+            #ll_i[j] = log(1/sqrt(2*pi)/sqrt(var_ij))-(b_i-tau_i*omega_j)**2/2/var_ij + log(phi_j)
+            ll_i[j] = -log(sqrt(2*pi))-(log(omega_j)+log(tau_i)-log(s))/2-(b_i-tau_i*omega_j)**2/2/var_ij + log(phi_j)
         #print(log_sum_exp(ll_i))
         result = log_sum_exp(ll_i)
         ll += result
