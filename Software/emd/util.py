@@ -1,5 +1,6 @@
 from bitsets import bitset
 from treeswift import *
+import re
 
 def bitset_from_tree(tree):
     taxa = tuple(node.label for node in tree.traverse_leaves())
@@ -10,7 +11,8 @@ def bitset_index(tree,BS):
 # the tree MUST have the same taxa as those that are encoded in BS
     for node in tree.traverse_postorder():
         if node.is_leaf():
-            node.bits = BS([node.label])
+            lb = re.sub("\[.*\]","",node.label)
+            node.bits = BS([lb])
         else:
             C = node.child_nodes()
             bs =  C[0].bits

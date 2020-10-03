@@ -1,6 +1,6 @@
 from treeswift import *
 import numpy as np
-from math import exp,log, sqrt
+from math import exp,log, sqrt, pi
 from scipy.optimize import minimize, LinearConstraint,Bounds
 from scipy.stats import poisson, expon,lognorm,norm
 from os.path import basename, dirname, splitext,realpath,join,normpath,isdir,isfile,exists
@@ -13,6 +13,7 @@ from scipy.sparse import diags
 from scipy.sparse import csr_matrix
 import cvxpy as cp
 from emd.quadprog_solvers import *
+from random import uniform
 
 EPS_tau=1e-5
 EPSILON=1e-4
@@ -25,7 +26,7 @@ MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 lsd_exec="/calab_data/mirarab/home/umai/my_gits/EM_Date/Software/lsd-0.2/bin/lsd.exe"
 
 
-def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1000,k=100,df=0.01,maxIter=500,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO):
+def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1000,k=100,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO):
     M, dt, b, stds = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile)
     ############################
     #with open("/calab_data/mirarab/home/umai/EMDate/D750_11_10/rep001/exp_100bins_gaussian/stds.txt",'r') as fin:
@@ -54,16 +55,20 @@ def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1
         print("Current llh: " + str(llh))
         curr_df = None if pre_llh is None else llh - pre_llh
         print("Current df: " + str(curr_df))
-        if curr_df is not None and curr_df < df:
-            break
+        #if curr_df is not None and curr_df < df:
+        #    break
         phi = next_phi
         tau = next_tau    
         pre_llh = llh    
+        Q = run_Estep(b,s,omega,tau,phi,stds,pseudo=pseudo)
 
-    # convert branch length to time unit
+    # convert branch length to time unit and compute mu for each branch
     for node in tree.traverse_postorder():
         if not node.is_root():
             node.set_edge_length(tau[node.idx])
+            node.mu = sum(o*p for (o,p) in zip(omega,Q[node.idx]))
+        else:
+            node.mu = sum(o*p for (o,p) in zip(omega,phi))
 
     # compute divergence times
     compute_divergence_time(tree,smpl_times)
@@ -107,7 +112,7 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
                 t1 = c.time - c.get_edge_length()
                 t = t1 if t is None else t
                 if abs(t-t1) > EPSILON:
-                    logger.warning("Inconsistent divergence time computed for node " + lb + ". Violate by " + str(abs(t-t1)))
+                    print("Inconsistent divergence time computed for node " + lb + ". Violate by " + str(abs(t-t1)))
                 #assert abs(t-t1) < EPSILON_t, "Inconsistent divergence time computed for node " + lb
             else:
                 stk.append(c)
@@ -115,24 +120,19 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
 
     # place the divergence time and mutation rate onto the label
     for node in tree.traverse_postorder():
-        if node.is_leaf():
-            continue
+        #if node.is_leaf():
+        #    continue
         lb = node.get_label()
         assert node.time is not None, "Failed to compute divergence time for node " + lb
         if as_date:
             divTime = days_to_date(node.time)
         else:
             divTime = str(node.time) if not bw_time else str(-node.time)
-        tag = "[t=" + divTime + "]"
+        tag = "[t=" + divTime + ",mu=" + str(node.mu) + "]"
         lb = lb + tag if lb else tag
         node.set_label(lb)
 
 def init_EM(tree,sampling_time,k,s=1000,refTreeFile=None,eps_tau=EPS_tau,init_rate_distr=None):
-    if refTreeFile is None:
-        mu,tau = run_lsd(tree,sampling_time,s=s,eps_tau=eps_tau)
-    else:
-        tau = init_tau_from_refTree(tree,refTreeFile,eps_tau=eps_tau)
-
     #omega,phi = discretize(mu,k)
     #omega,phi = discretize_uniform(k)
     if init_rate_distr:
@@ -141,6 +141,19 @@ def init_EM(tree,sampling_time,k,s=1000,refTreeFile=None,eps_tau=EPS_tau,init_ra
     else:    
         #omega,phi = discrete_lognorm(0.006,0.4,k)
         omega,phi = discrete_exponential(0.006,k)
+    
+    if refTreeFile is None:
+        #mu,tau = run_lsd(tree,sampling_time,s=s,eps_tau=eps_tau)
+        N = len(list(tree.traverse_preorder()))-1
+        tau = [0]*N
+        for node in tree.traverse_preorder():
+            if not node.is_root():
+                b = node.get_edge_length()
+                tmin = b/omega[0]
+                tmax = b/omega[-1]
+                tau[node.idx] = uniform(tmin,tmax)
+    else:
+        tau = init_tau_from_refTree(tree,refTreeFile,eps_tau=eps_tau)
     
     #omega = [0.001,0.01]
     #phi = [0.5,0.5]
@@ -430,17 +443,17 @@ def compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
     def f(x,*args):
     # objective function
         Q,omega,b = args
-        return sum(Q[i][j]*s/omega[j]/x[i]*(b[i]-omega[j]*x[i])**2 + Q[i][j]/2*log(omega[j]*x[i]) for i in range(N) for j in range(k))
+        return sum(Q[i][j]*s/omega[j]/x[i]*(b[i]-omega[j]*x[i])**2 + Q[i][j]*log(omega[j]*x[i]) for i in range(N) for j in range(k))
     
     def g(x,*args):
     # Jacobian
         Q,omega,b = args
-        return np.array([sum(q_i[j]*s*(omega[j]-b_i**2/omega[j]/tau_i**2) + q_i[j]/2/tau_i for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
+        return np.array([sum(q_i[j]*s*(omega[j]-b_i**2/omega[j]/tau_i**2) + q_i[j]/tau_i for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
     
     def h(x,*args):
     # Hessian
         Q,omega,b = args
-        return diags([sum(2*q_i[j]*s*b_i**2/omega[j]/tau_i**3 - q_i[j]/2/tau_i**2 for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
+        return diags([sum(2*q_i[j]*s*b_i**2/omega[j]/tau_i**3 - q_i[j]/tau_i**2 for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
     
     linear_constraint = LinearConstraint(csr_matrix(M),dt,dt,keep_feasible=True)
     bounds = Bounds(np.zeros(N)+eps_tau,np.zeros(N)+1e5,keep_feasible=True)
@@ -471,7 +484,7 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
         #q[i] *= (2*b[i]/w_i)
         q[i] *= 2*b[i]
           
-    P = diag(Pd)        
+    P = np.diag(Pd)        
     #param_1 = cp.Parameter(q.shape,nonneg=True,value=q)
     #param_2 = cp.Parameter(P.shape,nonneg=True,value=P)
     #N = len(tau)

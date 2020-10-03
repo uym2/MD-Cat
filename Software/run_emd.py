@@ -5,6 +5,8 @@ from emd.emd_normal_lib import *
 from treeswift import *
 import argparse
 from simulator.multinomial import *
+from random import random
+from emd.binning_lib import init_bins
 
 parser = argparse.ArgumentParser()
 
@@ -50,10 +52,16 @@ if args["clockFile"] is not None:
         for line in fin:
             o,p = line.strip().split()
             omega.append(float(o))
-            phi.append(float(p))
+            #phi.append(float(p))
+            phi.append(random())
+    sp = sum(phi)
+    phi = [p/sp for p in phi]        
     init_rate_distr = multinomial(omega,phi)
 else:
-    init_rate_distr = None        
+    mu = 0.006 # hard code for now
+    omega,phi = init_bins(mu,k)
+    #init_rate_distr = multinomial(omega,phi)        
+    init_rate_distr = None
 
 with open(intreeFile,"r") as fin:
     with open(outtreeFile,"w") as fout:

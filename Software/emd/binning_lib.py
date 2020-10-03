@@ -16,13 +16,13 @@ def make_bins(wl,wr,nbins,p=1.0):
     return omega,phi
 
 def init_bins(mu,nbins):
-    sd = 0.4 
-    sigma = sqrt(log(sd*sd+1))
-    scale = 1/sqrt(sd*sd+1)
-    wl = mu*lognorm.ppf(1.0/5/nbins,sigma,0,scale)
-    wr = mu*lognorm.ppf(1-1.0/5/nbins,sigma,0,scale)
-    #wl = expon.ppf(1.0/2/nbins,scale=mu)
-    #wr = expon.ppf(1-1.0/2/nbins,scale=mu)
+    #sd = 0.4 
+    #sigma = sqrt(log(sd*sd+1))
+    #scale = 1/sqrt(sd*sd+1)
+    #wl = mu*lognorm.ppf(1.0/5/nbins,sigma,0,scale)
+    #wr = mu*lognorm.ppf(1-1.0/5/nbins,sigma,0,scale)
+    wl = expon.ppf(1.0/2/nbins,scale=mu)
+    wr = expon.ppf(1-1.0/2/nbins,scale=mu)
     return make_bins(wl,wr,nbins)
     #p = [i/(nbins+1) for i in range(1,nbins+1)]
     #omega = [expon.ppf(q,scale=mu) for q in p]

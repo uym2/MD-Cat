@@ -63,6 +63,6 @@ for i in range(n):
     write_tree(tree,edge_type='b',outfile=outtreeFile,append=True)
     if outMuFile:
         with open(outMuFile,'a') as fout:
-            fout.write("Tree " + str(i+1) + "\n")
-            for lb in mus:
+            #fout.write("Tree " + str(i+1) + "\n")
+            for lb in sorted(mus):
                 fout.write(lb + " " + str(mus[lb]) + "\n")
