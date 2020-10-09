@@ -55,8 +55,8 @@ if args["clockFile"] is not None:
         for line in fin:
             o,p = line.strip().split()
             omega.append(float(o))
-            #phi.append(float(p))
-            phi.append(random())
+            phi.append(float(p))
+            #phi.append(random())
     sp = sum(phi)
     phi = [p/sp for p in phi]        
     init_rate_distr = multinomial(omega,phi)

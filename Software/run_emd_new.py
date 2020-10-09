@@ -21,7 +21,10 @@ parser.add_argument("--assignLabel",action='store_true',help="Assign label to in
 parser.add_argument("--clockFile",required=False,help="A file that defines a customized (discretized) clock model. Will override --bins")
 parser.add_argument("--bins",required=False,help="Specify the bins for the rate (i.e. omega)")
 parser.add_argument("--fixedPhi",action='store_true',help="Fix the probability distribution")
+parser.add_argument("-v","--verbose",action='store_true',help="Verbose")
 parser.add_argument("-k","--nbin",required=False,help="The number of bins to discretize the rate distribution. Default: 100")
+parser.add_argument("--maxIter",required=False,help="The maximum number of iterations for EM search. Default: 100")
+
 
 args = vars(parser.parse_args())
 
@@ -35,6 +38,8 @@ seqLen = int(args["seqLen"]) if args["seqLen"] else 1000
 k = int(args["nbin"]) if args["nbin"] else 100
 refTreeFile = args["refTreeFile"]
 smpl_times = {}
+maxIter = int(args["maxIter"]) if args["maxIter"] else 100
+
 
 with open(timeFile,"r") as fin:
     for line in fin:
@@ -50,8 +55,8 @@ if args["clockFile"] is not None:
         for line in fin:
             o,p = line.strip().split()
             omega.append(float(o))
-            #phi.append(float(p))
-            phi.append(random())
+            phi.append(float(p))
+            #phi.append(random())
     sp = sum(phi)
     phi = [p/sp for p in phi]        
     init_rate_distr = multinomial(omega,phi)
@@ -72,7 +77,7 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=100,refTreeFile=refTreeFile,fixed_phi=False,fixed_tau=False,k=k)                 
+best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTreeFile=refTreeFile,fixed_phi=False,fixed_tau=False,k=k,verbose=args["verbose"])                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):

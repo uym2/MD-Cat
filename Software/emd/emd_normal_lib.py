@@ -15,7 +15,7 @@ import cvxpy as cp
 from emd.quadprog_solvers import *
 from random import uniform, random
 
-EPS_tau=1e-5
+EPS_tau=1e-4
 EPSILON=1e-4
 INF = float("inf")
 PSEUDO = 1.0
@@ -25,19 +25,19 @@ MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 #lsd_exec=normpath(join(dirname(realpath(__file__)),"../lsd-0.2/src/lsd")) # temporary solution
 lsd_exec="/calab_data/mirarab/home/umai/my_gits/EM_Date/Software/lsd-0.2/bin/lsd.exe"
 
-def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,k=100,nrep=100,maxIter=100,refTreeFile=None,fixed_phi=False,fixed_tau=False):
+def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,k=100,nrep=100,maxIter=100,refTreeFile=None,fixed_phi=False,fixed_tau=False,verbose=False):
     best_llh = -float("inf")
     best_tree = None
     best_phi = None
     best_omega = None
     for r in range(nrep):
-        print("Solving EM with init point + " + str(r))
+        print("Solving EM with init point + " + str(r+1))
         new_tree = read_tree_newick(tree.newick())
         try:
-            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=None,maxIter=maxIter,refTreeFile=refTreeFile,fixed_phi=fixed_phi,fixed_tau=fixed_tau)
+            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTreeFile=refTreeFile,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose)
             print("New llh: " + str(llh))
             print([(o,p) for (o,p) in zip(omega,phi)])
-            print(new_tree.newick())  
+            #print(new_tree.newick())  
             if llh > best_llh:
                 best_llh = llh  
                 best_tree = new_tree
@@ -47,24 +47,30 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
             print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
-def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO):
+def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO,verbose=False):
     M, dt, b, stds = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile)
     tau, phi, omega = init_EM(tree,smpl_times,k=k,input_omega=input_omega,s=s,refTreeFile=refTreeFile,init_rate_distr=init_rate_distr)
-    print("Initialized EM")
+    if verbose:
+        print("Initialized EM")
     pre_llh = f_ll(b,s,tau,omega,phi,stds,pseudo=pseudo)
-    print("Initial likelihood: " + str(pre_llh))
+    if verbose:
+        print("Initial likelihood: " + str(pre_llh))
     for i in range(1,maxIter+1):
-        print("EM iteration " + str(i))
-        print("Estep ...")
+        if verbose:
+            print("EM iteration " + str(i))
+            print("Estep ...")
         #Q = run_Estep_naive(b,s,omega,tau,phi,stds,pseudo=pseudo)
         Q = run_Estep(b,s,omega,tau,phi,stds,pseudo=pseudo)
-        print("Mstep ...")
+        if verbose:
+            print("Mstep ...")
         next_phi,next_tau = run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
         llh = f_ll(b,s,next_tau,omega,next_phi,stds,pseudo=pseudo)
         #llh = elbo(tau,phi,omega,Q,b,s)
-        print("Current llh: " + str(llh))
+        if verbose:
+            print("Current llh: " + str(llh))
         curr_df = None if pre_llh is None else llh - pre_llh
-        print("Current df: " + str(curr_df))
+        if verbose:
+            print("Current df: " + str(curr_df))
         #if curr_df is not None and curr_df < df:
         #    break
         phi = next_phi
@@ -477,11 +483,11 @@ def compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
         Q,omega,b = args
         return diags([sum(2*q_i[j]*s*b_i**2/omega[j]/tau_i**3 - q_i[j]/tau_i**2 for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
     
-    linear_constraint = LinearConstraint(csr_matrix(M),dt,dt,keep_feasible=True)
-    bounds = Bounds(np.zeros(N)+eps_tau,np.zeros(N)+1e5,keep_feasible=True)
+    linear_constraint = LinearConstraint(csr_matrix(M),dt,dt,keep_feasible=False)
+    bounds = Bounds(np.zeros(N)+eps_tau,np.zeros(N)+1e5,keep_feasible=False)
     args = (Q,omega,b)
 
-    result = minimize(fun=f,method="trust-constr",x0=tau,args=args,bounds=bounds,constraints=[linear_constraint],options={'disp':True,'verbose':3},jac=g,hess=h)
+    result = minimize(fun=f,method="trust-constr",x0=tau,args=args,bounds=bounds,constraints=[linear_constraint],options={'disp':True,'verbose':1},jac=g,hess=h)
     tau_star = result.x
 
     return tau_star

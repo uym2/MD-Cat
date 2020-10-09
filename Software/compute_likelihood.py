@@ -11,7 +11,7 @@ parser.add_argument("-r","--ref",required=True, help="Reference time tree to com
 parser.add_argument("-t","--samplingTime",required=True,help="Sampling time")
 parser.add_argument("-s","--seqLen",required=False, help="Sequence length. Default: 1000")
 parser.add_argument("-k","--nbin",required=False,help="The number of bins to discretize the rate distribution. Default: 100")
-#parser.add_argument("-U","--clockFile",required=False, help="A file contains mutation rates to be used to compute emperical rate distribution")
+parser.add_argument("--bins",required=False,help="Specify the bins for the rate (i.e. omega)")
 parser.add_argument("--clockFile",required=False,help="A file that defines a customized (discretized) clock model")
 
 args = vars(parser.parse_args())
@@ -31,6 +31,8 @@ with open(timeFile,"r") as fin:
         name,time = line.split()
         smpl_times[name] = float(time)
 
+init_rate_distr = None    
+omega = None
 if clockFile:
     omega = []
     phi = []
@@ -41,12 +43,15 @@ if clockFile:
             phi.append(float(p))
     init_rate_distr = multinomial(omega,phi)
     fixed_phi = True
+elif args["bins"] is not None:        
+    omega = [float(o) for o in args["bins"].split()]
+    fixed_phi = False
 else:
-    init_rate_distr = None    
     fixed_phi = False
 
 with open(intreeFile,'r') as fin:
     for treeStr in fin:
         tree = read_tree_newick(treeStr)
         _,_,b,stds = setup_constr(tree,smpl_times,s)
-        tau, omega, phi, llh = EM_date(tree,smpl_times,refTreeFile=refTreeFile,maxIter=1,s=s,k=k,fixed_phi=fixed_phi,fixed_tau=True,init_rate_distr=init_rate_distr)        
+        tau, omega, phi, llh = EM_date(tree,smpl_times,input_omega=omega,refTreeFile=refTreeFile,maxIter=100,s=s,k=k,fixed_phi=fixed_phi,fixed_tau=True,init_rate_distr=init_rate_distr)       
+        print(llh) 
