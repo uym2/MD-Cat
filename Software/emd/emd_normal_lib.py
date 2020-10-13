@@ -25,7 +25,29 @@ MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 #lsd_exec=normpath(join(dirname(realpath(__file__)),"../lsd-0.2/src/lsd")) # temporary solution
 lsd_exec="/calab_data/mirarab/home/umai/my_gits/EM_Date/Software/lsd-0.2/bin/lsd.exe"
 
-def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,k=100,nrep=100,maxIter=100,refTreeFile=None,fixed_phi=False,fixed_tau=False,verbose=False):
+def EM_date_adapt_bins(tree,smpl_times,init_mu,nbins=130,s=10000,maxIter=100,nrep=100):
+    k = 1
+    omega = [init_mu]
+    o_min = init_mu/2
+    o_max = init_mu*2
+    refTree = None
+    while k < nbins:
+        print("Solving new EM-Date with " + str(k) + " bins")
+        new_tree = read_tree_newick(tree.newick())
+        best_tree,best_llh,best_phi,best_omega = EM_date_random_init(new_tree,smpl_times,s=s,input_omega=omega,maxIter=maxIter,refTree=refTree,nrep=nrep)
+        refTree = best_tree
+        if k == 1:
+            new_omega = [o_min,init_mu,o_max]
+        else:
+            new_omega = [o_min]    
+            for o in best_omega[1:]:
+                new_omega.append(exp((log(new_omega[-1])+log(o))/2))
+                new_omega.append(o)
+        omega = new_omega        
+        k = len(omega)
+    return best_tree,best_llh,best_phi,best_omega
+
+def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,k=100,nrep=100,maxIter=100,refTree=None,fixed_phi=False,fixed_tau=False,verbose=False):
     best_llh = -float("inf")
     best_tree = None
     best_phi = None
@@ -34,7 +56,7 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
         print("Solving EM with init point + " + str(r+1))
         new_tree = read_tree_newick(tree.newick())
         try:
-            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTreeFile=refTreeFile,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose)
+            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose)
             print("New llh: " + str(llh))
             print([(o,p) for (o,p) in zip(omega,phi)])
             #print(new_tree.newick())  
@@ -47,9 +69,9 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
             print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
-def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO,verbose=False):
+def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO,verbose=False):
     M, dt, b, stds = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile)
-    tau, phi, omega = init_EM(tree,smpl_times,k=k,input_omega=input_omega,s=s,refTreeFile=refTreeFile,init_rate_distr=init_rate_distr)
+    tau, phi, omega = init_EM(tree,smpl_times,k=k,input_omega=input_omega,s=s,refTree=refTree,init_rate_distr=init_rate_distr)
     if verbose:
         print("Initialized EM")
     pre_llh = f_ll(b,s,tau,omega,phi,stds,pseudo=pseudo)
@@ -148,7 +170,7 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
         lb = lb + tag if lb else tag
         node.set_label(lb)
 
-def init_EM(tree,sampling_time,k=100,s=1000,input_omega=None,refTreeFile=None,eps_tau=EPS_tau,init_rate_distr=None):
+def init_EM(tree,sampling_time,k=100,s=1000,input_omega=None,refTree=None,eps_tau=EPS_tau,init_rate_distr=None):
     if init_rate_distr:
         omega = init_rate_distr.omega
         phi = init_rate_distr.phi
@@ -161,7 +183,7 @@ def init_EM(tree,sampling_time,k=100,s=1000,input_omega=None,refTreeFile=None,ep
         #omega,phi = discrete_lognorm(0.006,0.4,k)
         omega,phi = discrete_exponential(0.006,k)
     
-    if refTreeFile is None:
+    if refTree is None:
         #mu,tau = run_lsd(tree,sampling_time,s=s,eps_tau=eps_tau)
         N = len(list(tree.traverse_preorder()))-1
         tau = [0]*N
@@ -172,7 +194,7 @@ def init_EM(tree,sampling_time,k=100,s=1000,input_omega=None,refTreeFile=None,ep
                 tmax = b/omega[-1]
                 tau[node.idx] = uniform(tmin,tmax)
     else:
-        tau = init_tau_from_refTree(tree,refTreeFile,eps_tau=eps_tau)
+        tau = init_tau_from_refTree(tree,refTree,eps_tau=eps_tau)
     
     #omega = [0.001,0.01]
     #phi = [0.5,0.5]
@@ -299,9 +321,9 @@ def run_lsd(tree,sampling_time,s=1000,eps_tau=EPS_tau):
     
     return mu,tau
 
-def init_tau_from_refTree(my_tree,ref_tree_file,eps_tau=EPS_tau):
+def init_tau_from_refTree(my_tree,refTree,eps_tau=EPS_tau):
     BS, bits2idx = get_tree_bitsets(my_tree)
-    refTree = read_tree_newick(ref_tree_file)
+    #refTree = read_tree_newick(ref_tree_file)
     bitset_index(refTree,BS)
     n = len(list(refTree.traverse_leaves()))
     N = 2*n-2
