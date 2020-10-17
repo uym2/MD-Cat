@@ -87,7 +87,7 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
             print("Mstep ...")
         #next_phi,next_tau = run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
         next_phi,next_tau,next_omega = run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
-        llh = f_ll(b,s,next_tau,next_omega,next_phi,stds,pseudo=pseudo)
+        llh = f_ll_naive(b,s,next_tau,next_omega,next_phi,stds,pseudo=pseudo)
         #llh = elbo(tau,phi,omega,Q,b,s)
         if verbose:
             print("Current llh: " + str(llh))
@@ -403,7 +403,7 @@ def log_sum_exp(numlist):
         return log(len(numlist)) + MIN_ll
     s = sum(exp(x-minx) for x in numlist if x > MIN_ll)
     #print(min(numlist),max(numlist),exp(max(numlist)-min(numlist)))
-    result = minx + log(s) if s > 0 else log(len(numlist)) + MIN_ll
+    result = minx + log(s)  if s > 0 else log(len(numlist)) + MIN_ll
     return result
 
 def run_Estep(b,s,omega,tau,phi,stds,p_eps=EPS_tau,pseudo=PSEUDO):
@@ -482,6 +482,16 @@ def f_ll(b,s,tau,omega,phi,stds,pseudo=PSEUDO):
         #print(log_sum_exp(ll_i))
         result = log_sum_exp(ll_i)
         ll += result
+    return ll
+
+def f_ll_naive(b,s,tau,omega,phi,stds,pseudo=PSEUDO):
+    ll = 0
+    for b_i,tau_i,std_i in zip(b,tau,stds): 
+        lli = 0
+        for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
+            var_ij = omega_j*tau_i/s
+            lli += norm.pdf(b_i,omega_j*tau_i,sqrt(var_ij))*phi_j
+        ll += log(lli)
     return ll
 
 def compute_phi_star(Q):
