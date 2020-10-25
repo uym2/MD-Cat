@@ -12,7 +12,7 @@ from emd.util import bitset_from_tree, bitset_index
 from scipy.sparse import diags
 from scipy.sparse import csr_matrix
 import cvxpy as cp
-from random import random
+from random import random, uniform
 
 EPS_tau=1e-4
 EPSILON=1e-4

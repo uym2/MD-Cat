@@ -55,18 +55,18 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
     for r in range(nrep):
         print("Solving EM with init point + " + str(r+1))
         new_tree = read_tree_newick(tree.newick())
-        #try:
-        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose)
-        print("New llh: " + str(llh))
-        print([(o,p) for (o,p) in zip(omega,phi)])
-        #print(new_tree.newick())  
-        if llh > best_llh:
-            best_llh = llh  
-            best_tree = new_tree
-            best_phi = phi
-            best_omega = omega
-        #except:
-        #    print("Failed to optimize using this init point!")        
+        try:
+            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose)
+            print("New llh: " + str(llh))
+            print([(o,p) for (o,p) in zip(omega,phi)])
+            #print(new_tree.newick())  
+            if llh > best_llh:
+                best_llh = llh  
+                best_tree = new_tree
+                best_phi = phi
+                best_omega = omega
+        except:
+            print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
 def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO,verbose=False):
@@ -85,9 +85,9 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
         Q = run_Estep(b,s,omega,tau,phi,stds,pseudo=pseudo)
         if verbose:
             print("Mstep ...")
-        #next_phi,next_tau = run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
-        next_phi,next_tau,next_omega = run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
-        llh = f_ll_naive(b,s,next_tau,next_omega,next_phi,stds,pseudo=pseudo)
+        next_phi,next_tau,next_omega = run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
+        #next_phi,next_tau,next_omega = run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
+        llh = f_ll(b,s,next_tau,next_omega,next_phi,stds,pseudo=pseudo)
         #llh = elbo(tau,phi,omega,Q,b,s)
         if verbose:
             print("Current llh: " + str(llh))
@@ -456,7 +456,7 @@ def run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixe
     tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
     #tau_star = compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
     
-    return phi_star, tau_star
+    return phi_star, tau_star, omega
 
 def run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,pseudo=PSEUDO):
     phi_star = compute_phi_star(Q) if not fixed_phi else phi

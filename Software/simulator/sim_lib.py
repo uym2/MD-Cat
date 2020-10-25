@@ -62,7 +62,8 @@ def simulate_poisson(timeTree,rate_distr=None,seqLen=1000):
         # simulate the Poisson process
         tau = node.edge_length
         ld = seqLen*mu*tau # this is the parameter of the Poisson distribution
-        node.b = (eps/seqLen + poisson.rvs(ld))/seqLen
+        #node.b = (eps/seqLen + poisson.rvs(ld))/seqLen
+        node.b = poisson.rvs(ld)/seqLen
     return simulated_mu
 
 def write_tree(tree,edge_type='b',outfile=None,append=False):

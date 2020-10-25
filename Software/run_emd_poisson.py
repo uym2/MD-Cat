@@ -39,7 +39,7 @@ k = int(args["nbin"]) if args["nbin"] else 100
 refTreeFile = args["refTreeFile"]
 smpl_times = {}
 maxIter = int(args["maxIter"]) if args["maxIter"] else 100
-
+fixedPhi = args["fixedPhi"]
 
 refTree = read_tree_newick(refTreeFile) if refTreeFile else None
 
@@ -79,7 +79,7 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=False,fixed_tau=False,k=k,verbose=args["verbose"])                 
+best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=False,k=k,verbose=args["verbose"])                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):
