@@ -16,6 +16,7 @@ parser.add_argument("-k","--nbin",required=False,help="The number of bins to dis
 parser.add_argument("-f","--inMuFile",required=False,help="The file that defines a customized categorical clock model. Will override -u, -k, and -m")
 parser.add_argument("-U","--outMuFile",required=False,help="Write the simulated mu values to this file. Default: None")
 parser.add_argument("-b","--brError",required=False,help="Model of the branch error. Can be either Gaussian (lsd's model), Poisson (LF's model), or None (no branch error). Default: None")
+parser.add_argument("--multimodal",required=False,help="Define a multimodal distribution. Will override -m, -k, and -u")
 
 args = vars(parser.parse_args())
 
@@ -29,11 +30,25 @@ n = int(args["nsample"]) if args["nsample"] else 1
 k = int(args["nbin"]) if args["nbin"] else None
 outMuFile = args["outMuFile"]
 brError = args["brError"] if args["brError"] else "Const"
-#do_poisson = args["poisson"]
 
 model_args = model.split("_") if model else [None,None]
 
-if args["inMuFile"] is not None:
+if args["multimodal"] is not None:    
+    models = []
+    probs = []
+    for x in args["multimodal"].split():
+        a,b,c = x.split(":")
+        m = a.split("_")
+        mu = float(b)
+        p = float(c)
+        if m[0] == 'lnorm':
+            sd = float(m[1])
+            models.append(lognormal(mu,sd))
+        elif m[0] == 'exp':
+            models.append(exponential(mu))
+        probs.append(p)
+    rate_distr = multimodal(models,probs)                
+elif args["inMuFile"] is not None:
     omega = []
     phi = []
     with open(args["inMuFile"],'r') as fin:

@@ -15,7 +15,7 @@ import cvxpy as cp
 from emd.quadprog_solvers import *
 from random import uniform, random
 
-EPS_tau=1e-4
+EPS_tau=1e-3
 EPSILON=1e-4
 INF = float("inf")
 PSEUDO = 1.0
@@ -55,18 +55,18 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
     for r in range(nrep):
         print("Solving EM with init point + " + str(r+1))
         new_tree = read_tree_newick(tree.newick())
-        try:
-            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose)
-            print("New llh: " + str(llh))
-            print([(o,p) for (o,p) in zip(omega,phi)])
-            #print(new_tree.newick())  
-            if llh > best_llh:
-                best_llh = llh  
-                best_tree = new_tree
-                best_phi = phi
-                best_omega = omega
-        except:
-            print("Failed to optimize using this init point!")        
+        #try:
+        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose)
+        print("New llh: " + str(llh))
+        print([(o,p) for (o,p) in zip(omega,phi)])
+        #print(new_tree.newick())  
+        if llh > best_llh:
+            best_llh = llh  
+            best_tree = new_tree
+            best_phi = phi
+            best_omega = omega
+        #except:
+        #    print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
 def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO,verbose=False):
@@ -452,14 +452,16 @@ def run_Estep_naive(b,s,omega,tau,phi,stds,p_eps=EPS_tau,pseudo=PSEUDO):
     return Q
 
 def run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,pseudo=PSEUDO):
-    phi_star = compute_phi_star(Q) if not fixed_phi else phi
+    #phi_star = compute_phi_star(Q) if not fixed_phi else phi
+    phi_star = compute_phi_star_cvxpy(Q) if not fixed_phi else phi
     tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
     #tau_star = compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
     
     return phi_star, tau_star, omega
 
 def run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,pseudo=PSEUDO):
-    phi_star = compute_phi_star(Q) if not fixed_phi else phi
+    #phi_star = compute_phi_star(Q) if not fixed_phi else phi
+    phi_star = compute_phi_star_cvxpy(Q) if not fixed_phi else phi
     tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
     omega_star = compute_omega_star_cvxpy(tau_star,omega,Q,b)
     
@@ -495,7 +497,6 @@ def f_ll_naive(b,s,tau,omega,phi,stds,pseudo=PSEUDO):
     return ll
 
 def compute_phi_star(Q):
-    #return np.array(np.mean(Q,axis=0,dtype=float))[0]
     k = len(Q[0])
     phi = [0]*k
     N = 0
@@ -504,6 +505,24 @@ def compute_phi_star(Q):
             phi = [x+y for (x,y) in zip(phi,Qi)]
             N += 1
     return [x/N for x in phi]    
+
+def compute_phi_star_cvxpy(Q,gamma=0):
+    k = len(Q[0])
+    S = [0]*k
+    for Qi in Q:
+        S = [x+y for (x,y) in zip(S,Qi)]
+
+    var_phi = cp.Variable(k)
+       
+    objective = cp.Maximize(np.array(S).T @ cp.log(var_phi) + gamma*cp.sum(cp.entr(var_phi)) ) 
+    #objective = cp.Maximize( cp.sum(cp.entr(var_phi)))
+    constraints = [ (np.zeros(k)+1).T @ var_phi == 1, var_phi >= 0 ]
+
+    prob = cp.Problem(objective,constraints)
+    f_star = prob.solve(verbose=False)
+    phi_star = var_phi.value
+
+    return phi_star
 
 def compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEUDO):
     N = len(b)

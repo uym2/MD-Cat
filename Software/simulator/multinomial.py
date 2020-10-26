@@ -53,6 +53,18 @@ class lognormal:
 
     def randomize(self):
         return self.mu*lognorm.rvs(self.sigma,0,self.scale)  
+
+
+class multimodal:
+    def __init__(self,models,probs):
+        self.models = models
+        self.probs = probs
+        self.acc = cdf_from_pdf(probs)
+
+    def randomize(self):
+        r = random()
+        i = binary_search(self.acc,r)
+        return self.models[i].randomize()    
     
 def discrete_lognorm(mu,sd,k):
     # scipy reference https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.lognorm.html#scipy.stats.lognorm
