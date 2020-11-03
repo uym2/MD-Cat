@@ -460,8 +460,8 @@ def run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixe
     return phi_star, tau_star, omega
 
 def run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,pseudo=PSEUDO):
-    #phi_star = compute_phi_star(Q) if not fixed_phi else phi
-    phi_star = compute_phi_star_cvxpy(Q) if not fixed_phi else phi
+    phi_star = compute_phi_star(Q) if not fixed_phi else phi
+    #phi_star = compute_phi_star_cvxpy(Q) if not fixed_phi else phi
     tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
     omega_star = compute_omega_star_cvxpy(tau_star,omega,Q,b)
     
@@ -506,7 +506,7 @@ def compute_phi_star(Q):
             N += 1
     return [x/N for x in phi]    
 
-def compute_phi_star_cvxpy(Q,gamma=0):
+def compute_phi_star_cvxpy(Q,gamma=10):
     k = len(Q[0])
     S = [0]*k
     for Qi in Q:
@@ -580,7 +580,7 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
     constraints = [np.zeros(N)+eps_tau <= var_tau, var_tau <= upper_bound, csr_matrix(M)*var_tau == np.array(dt)]
 
     prob = cp.Problem(objective,constraints)
-    f_star = prob.solve(verbose=False)
+    f_star = prob.solve(verbose=False,max_iter=100000)
     tau_star = var_tau.value
 
     return tau_star
