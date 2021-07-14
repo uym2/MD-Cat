@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-from emd.emd_normal_lib import *
+from emd.emd_lib import *
 from treeswift import *
 import argparse
 from simulator.multinomial import *
@@ -37,6 +37,7 @@ init_rate_distr = None
 omega = None
 fixed_phi = False
 maxIter = 100
+
 if clockFile:
     omega = []
     phi = []
@@ -54,6 +55,6 @@ elif args["bins"] is not None:
 with open(intreeFile,'r') as fin:
     for treeStr in fin:
         tree = read_tree_newick(treeStr)
-        _,_,b,stds = setup_constr(tree,smpl_times,s)
+        _,_,b = setup_constr(tree,smpl_times,s)
         tau, omega, phi, llh = EM_date(tree,smpl_times,input_omega=omega,refTree=refTree,maxIter=maxIter,s=s,k=k,fixed_phi=fixed_phi,fixed_tau=True,init_rate_distr=init_rate_distr,verbose=True)       
         print(llh) 

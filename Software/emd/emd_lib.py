@@ -12,11 +12,81 @@ from emd.util import bitset_from_tree, bitset_index
 from scipy.sparse import diags
 from scipy.sparse import csr_matrix
 import cvxpy as cp
+from random import random, uniform
 
-EPS_tau=1e-10
+EPS_tau=1e-4
+EPSILON=1e-4
 
 lsd_exec=normpath(join(dirname(realpath(__file__)),"../lsd-0.2/src/lsd")) # temporary solution
 
+def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,k=100,nrep=100,maxIter=100,refTree=None,fixed_phi=False,fixed_tau=False,verbose=False):
+    best_llh = -float("inf")
+    best_tree = None
+    best_phi = None
+    best_omega = None
+    for r in range(nrep):
+        print("Solving EM with init point + " + str(r+1))
+        new_tree = read_tree_newick(tree.newick())
+        #try:
+        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose)
+        print("New llh: " + str(llh))
+        print([(o,p) for (o,p) in zip(omega,phi)])
+        #print(new_tree.newick())  
+        if llh > best_llh:
+            best_llh = llh  
+            best_tree = new_tree
+            best_phi = phi
+            best_omega = omega
+        #except:
+        #    print("Failed to optimize using this init point!")        
+    return best_tree,best_llh,best_phi,best_omega        
+
+def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,verbose=False):
+    M, dt, b = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau)
+    tau, phi, omega = init_EM(tree,smpl_times,k=k,input_omega=input_omega,s=s,refTree=refTree,init_rate_distr=init_rate_distr)
+    if verbose:
+        print("Initialized EM")
+    pre_llh = f_ll(b,s,tau,omega,phi)
+    if verbose:
+        print("Initial likelihood: " + str(pre_llh))
+    for i in range(1,maxIter+1):
+        if verbose:
+            print("EM iteration " + str(i))
+            print("Estep ...")
+        #Q = run_Estep_naive(b,s,omega,tau,phi,stds,pseudo=pseudo)
+        Q = run_Estep(b,s,omega,tau,phi)
+        if verbose:
+            print("Mstep ...")
+        next_phi,next_tau,next_omega = run_Mstep(b,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau)
+        llh = f_ll(b,s,next_tau,next_omega,next_phi)
+        #llh = elbo(tau,phi,omega,Q,b,s)
+        if verbose:
+            print("Current llh: " + str(llh))
+        curr_df = None if pre_llh is None else llh - pre_llh
+        if verbose:
+            print("Current df: " + str(curr_df))
+        #if curr_df is not None and curr_df < df:
+        #    break
+        phi = next_phi
+        tau = next_tau    
+        omega = next_omega
+        pre_llh = llh    
+        Q = run_Estep(b,s,omega,tau,phi)
+
+    # convert branch length to time unit and compute mu for each branch
+    for node in tree.traverse_postorder():
+        if not node.is_root():
+            node.set_edge_length(tau[node.idx])
+            node.mu = sum(o*p for (o,p) in zip(omega,Q[node.idx]))
+        #else:
+        #    node.mu = sum(o*p for (o,p) in zip(omega,phi))
+
+    # compute divergence times
+    compute_divergence_time(tree,smpl_times)
+
+    return tau,omega,phi,llh
+
+'''
 def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,s=1000,k=100,df=1e-2,maxIter=500,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None):
     M, dt, x = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau)
     tau, phi, omega = init_EM(tree,smpl_times,k,s=s,refTreeFile=refTreeFile,init_rate_distr=init_rate_distr)
@@ -49,7 +119,95 @@ def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,s=1000,k=100,df=1e-2,
             node.set_edge_length(tau[node.idx])
 
     return tau,omega,phi
+'''
+def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
+# compute and place the divergence time onto the node label of the tree
+# must have at least one sampling time. Assumming the tree branches have been
+# converted to time unit and are consistent with the given sampling_time
+    calibrated = []
+    for node in tree.traverse_postorder():
+        node.time,node.mutation_rate = None,None
+        lb = node.get_label()
+        if lb in sampling_time:
+            node.time = sampling_time[lb]
+            calibrated.append(node)
 
+    stk = []
+    # push to stk all the uncalibrated nodes that are linked to (i.e. is parent or child of) any node in the calibrated list
+    for node in calibrated:
+        p = node.get_parent()
+        if p is not None and p.time is None:
+            stk.append(p)
+        if not node.is_leaf():
+            stk += [ c for c in node.child_nodes() if c.time is None ]            
+    
+    # compute divergence time of the remaining nodes
+    while stk:
+        node = stk.pop()
+        lb = node.get_label()
+        p = node.get_parent()
+        t = None
+        if p is not None:
+            if p.time is not None:
+                t = p.time + node.get_edge_length()
+            else:
+                stk.append(p)    
+        for c in node.child_nodes():
+            if c.time is not None:
+                t1 = c.time - c.get_edge_length()
+                t = t1 if t is None else t
+                if abs(t-t1) > EPSILON:
+                    print("Inconsistent divergence time computed for node " + lb + ". Violate by " + str(abs(t-t1)))
+                #assert abs(t-t1) < EPSILON_t, "Inconsistent divergence time computed for node " + lb
+            else:
+                stk.append(c)
+        node.time = t
+
+    # place the divergence time and mutation rate onto the label
+    for node in tree.traverse_postorder():
+        #if node.is_leaf():
+        #    continue
+        lb = node.get_label()
+        assert node.time is not None, "Failed to compute divergence time for node " + lb
+        if as_date:
+            divTime = days_to_date(node.time)
+        else:
+            divTime = str(node.time) if not bw_time else str(-node.time)
+        tag = "[t=" + divTime + ",mu=" + str(node.mu) + "]" if not node.is_root() else "[t=" + divTime + "]"
+        lb = lb + tag if lb else tag
+        node.set_label(lb)
+
+def init_EM(tree,sampling_time,k=100,s=1000,input_omega=None,refTree=None,eps_tau=EPS_tau,init_rate_distr=None):
+    if init_rate_distr:
+        omega = init_rate_distr.omega
+        phi = init_rate_distr.phi
+    elif input_omega:
+        omega = input_omega
+        phi = [random() for p in range(len(input_omega))]  
+        sp = sum(phi)
+        phi = [p/sp for p in phi] 
+    else:    
+        #omega,phi = discrete_lognorm(0.006,0.4,k)
+        omega,phi = discrete_exponential(0.006,k)
+    
+    if refTree is None:
+        #mu,tau = run_lsd(tree,sampling_time,s=s,eps_tau=eps_tau)
+        N = len(list(tree.traverse_preorder()))-1
+        tau = [0]*N
+        for node in tree.traverse_preorder():
+            if not node.is_root():
+                b = node.get_edge_length()
+                tmin = b/omega[0]
+                tmax = b/omega[-1]
+                tau[node.idx] = uniform(tmin,tmax)
+    else:
+        tau = init_tau_from_refTree(tree,refTree,eps_tau=eps_tau)
+    
+    #omega = [0.001,0.01]
+    #phi = [0.5,0.5]
+
+    return tau,phi,omega
+'''
 def init_EM(tree,sampling_time,k,s=1000,refTreeFile=None,eps_tau=EPS_tau,init_rate_distr=None):
     if refTreeFile is None:
         mu,tau = run_lsd(tree,sampling_time,s=s,eps_tau=eps_tau)
@@ -62,14 +220,14 @@ def init_EM(tree,sampling_time,k,s=1000,refTreeFile=None,eps_tau=EPS_tau,init_ra
         omega = init_rate_distr.omega
         phi = init_rate_distr.phi
     else:    
-        #omega,phi = discrete_lognorm(0.006,0.4,k)
-        omega,phi = discrete_exponential(0.006,k)
+        omega,phi = discrete_lognorm(0.006,0.4,k)
+        #omega,phi = discrete_exponential(0.006,k)
     
     #omega = [0.001,0.01]
     #phi = [0.5,0.5]
 
     return tau,phi,omega
-
+'''
 def discretize_uniform(k,Min=0.0005,Max=0.02):
     delta = (Max-Min)/(k-1)
     omega = [ Min + delta*i for i in range(k) ]
@@ -257,7 +415,7 @@ def run_Estep(x,s,omega,tau,phi,p_eps=EPS_tau):
         for j in range(k):
             omega_j = omega[j]
             phi_j = phi[j]
-            q_i[j] = max(p_eps,poisson.pmf(x_i,s*omega_j*tau_i)*phi_j)
+            q_i[j] = poisson.pmf(x_i,s*omega_j*tau_i)*phi_j
             #q_i[j] = (omega_j**x_i)*exp(-s*omega_j*tau_i)*phi_j
         
         Q[i] = q_i/sum(q_i)
@@ -268,7 +426,7 @@ def run_Mstep(x,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau
     phi_star = compute_phi_star(Q) if not fixed_phi else phi
     tau_star = compute_tau_star_cvx(tau,omega,Q,x,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
 
-    return phi_star, tau_star
+    return phi_star, tau_star, omega
     
 def elbo(tau,phi,omega,Q,x,s):
     Qt = Q.transpose()
@@ -303,7 +461,7 @@ def compute_tau_star_cvx(tau,omega,Q,x,s,M,dt,eps_tau=EPS_tau):
     constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)*var_tau == np.array(dt)]
 
     prob = cp.Problem(objective,constraints)
-    f_star = prob.solve(verbose=True)
+    f_star = prob.solve(verbose=False)
     tau_star = var_tau.value
 
     return tau_star

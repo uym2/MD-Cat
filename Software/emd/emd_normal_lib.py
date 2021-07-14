@@ -1,6 +1,6 @@
 from treeswift import *
 import numpy as np
-from math import exp,log, sqrt
+from math import exp,log, sqrt, pi
 from scipy.optimize import minimize, LinearConstraint,Bounds
 from scipy.stats import poisson, expon,lognorm,norm
 from os.path import basename, dirname, splitext,realpath,join,normpath,isdir,isfile,exists
@@ -12,46 +12,111 @@ from emd.util import bitset_from_tree, bitset_index
 from scipy.sparse import diags
 from scipy.sparse import csr_matrix
 import cvxpy as cp
-from emd.quadprog_solvers import *
+#from emd.quadprog_solvers import *
+from random import uniform, random
 
-EPS_tau=0
+EPS_tau=1e-3
 EPSILON=1e-4
 INF = float("inf")
+PSEUDO = 1.0
+MIN_b=0
+MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 
-lsd_exec=normpath(join(dirname(realpath(__file__)),"../lsd-0.2/src/lsd")) # temporary solution
+#lsd_exec=normpath(join(dirname(realpath(__file__)),"../lsd-0.2/src/lsd")) # temporary solution
+lsd_exec="/calab_data/mirarab/home/umai/my_gits/EM_Date/Software/lsd-0.2/bin/lsd.exe"
 
-def EM_date(tree,smpl_times,root_age=None,refTreeFile=None,s=1000,k=100,df=0.01,maxIter=500,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None):
-    M, dt, b = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau)
-    tau, phi, omega = init_EM(tree,smpl_times,k,s=s,refTreeFile=refTreeFile,init_rate_distr=init_rate_distr)
-    
-    print("Initialized EM")
-    pre_llh = f_ll(b,s,tau,omega,phi)
-    print("Initial likelihood: " + str(pre_llh))
+def EM_date_adapt_bins(tree,smpl_times,init_mu,nbins=130,s=10000,maxIter=100,nrep=100):
+    k = 1
+    omega = [init_mu]
+    o_min = init_mu/2
+    o_max = init_mu*2
+    refTree = None
+    while k < nbins:
+        print("Solving new EM-Date with " + str(k) + " bins")
+        new_tree = read_tree_newick(tree.newick())
+        best_tree,best_llh,best_phi,best_omega = EM_date_random_init(new_tree,smpl_times,s=s,input_omega=omega,maxIter=maxIter,refTree=refTree,nrep=nrep)
+        refTree = best_tree
+        if k == 1:
+            new_omega = [o_min,init_mu,o_max]
+        else:
+            new_omega = [o_min]    
+            for o in best_omega[1:]:
+                new_omega.append(exp((log(new_omega[-1])+log(o))/2))
+                new_omega.append(o)
+        omega = new_omega        
+        k = len(omega)
+    return best_tree,best_llh,best_phi,best_omega
 
+def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,k=100,nrep=100,maxIter=100,refTree=None,fixed_phi=False,fixed_tau=False,verbose=False):
+    best_llh = -float("inf")
+    best_tree = None
+    best_phi = None
+    best_omega = None
+    for r in range(nrep):
+        print("Solving EM with init point + " + str(r+1))
+        new_tree = read_tree_newick(tree.newick())
+        #try:
+        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose)
+        print("New llh: " + str(llh))
+        print([(o,p) for (o,p) in zip(omega,phi)])
+        #print(new_tree.newick())  
+        if llh > best_llh:
+            best_llh = llh  
+            best_tree = new_tree
+            best_phi = phi
+            best_omega = omega
+        #except:
+        #    print("Failed to optimize using this init point!")        
+    return best_tree,best_llh,best_phi,best_omega        
+
+def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO,verbose=False):
+    M, dt, b, stds = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile)
+    tau, phi, omega = init_EM(tree,smpl_times,k=k,input_omega=input_omega,s=s,refTree=refTree,init_rate_distr=init_rate_distr)
+    if verbose:
+        print("Initialized EM")
+    pre_llh = f_ll(b,s,tau,omega,phi,stds,pseudo=pseudo)
+    if verbose:
+        print("Initial likelihood: " + str(pre_llh))
+    #Q = [[1.0/k]*k for i in range(len(tau))]
     for i in range(1,maxIter+1):
-        print("EM iteration " + str(i))
-        print("Estep ...")
-        Q = run_Estep(b,s,omega,tau,phi)
-        print("Mstep ...")
-        phi,tau = run_Mstep(b,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau)
-        llh = f_ll(b,s,tau,omega,phi)
+        if verbose:
+            print("EM iteration " + str(i))
+            print("Estep ...")
+        #Q = run_Estep_naive(b,s,omega,tau,phi,stds,pseudo=pseudo)
+        Q = run_Estep(b,s,omega,tau,phi,stds,pseudo=pseudo)
+        if verbose:
+            print("Mstep ...")
+        if fixed_phi: # in the new method, if phi is fixed, then omega must be optimized and vice versa
+            next_phi,next_tau,next_omega = run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
+        else:
+            next_phi,next_tau,next_omega = run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
+        llh = f_ll(b,s,next_tau,next_omega,next_phi,stds,pseudo=pseudo)
         #llh = elbo(tau,phi,omega,Q,b,s)
-        print("Current llh: " + str(llh))
+        if verbose:
+            print("Current llh: " + str(llh))
         curr_df = None if pre_llh is None else llh - pre_llh
-        print("Current df: " + str(curr_df))
-        if curr_df is not None and curr_df < df:
-            break
+        if verbose:
+            print("Current df: " + str(curr_df))
+        #if curr_df is not None and curr_df < df:
+        #    break
+        phi = next_phi
+        tau = next_tau    
+        omega = next_omega
         pre_llh = llh    
+        #Q = run_Estep(b,s,omega,tau,phi,stds,pseudo=pseudo)
 
-    # convert branch length to time unit
+    # convert branch length to time unit and compute mu for each branch
     for node in tree.traverse_postorder():
         if not node.is_root():
             node.set_edge_length(tau[node.idx])
+            node.mu = sum(o*p for (o,p) in zip(omega,Q[node.idx]))
+        #else:
+        #    node.mu = sum(o*p for (o,p) in zip(omega,phi))
 
     # compute divergence times
     compute_divergence_time(tree,smpl_times)
 
-    return tau,omega,phi
+    return tau,omega,phi,llh
 
 def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
 # compute and place the divergence time onto the node label of the tree
@@ -90,7 +155,7 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
                 t1 = c.time - c.get_edge_length()
                 t = t1 if t is None else t
                 if abs(t-t1) > EPSILON:
-                    logger.warning("Inconsistent divergence time computed for node " + lb + ". Violate by " + str(abs(t-t1)))
+                    print("Inconsistent divergence time computed for node " + lb + ". Violate by " + str(abs(t-t1)))
                 #assert abs(t-t1) < EPSILON_t, "Inconsistent divergence time computed for node " + lb
             else:
                 stk.append(c)
@@ -98,32 +163,43 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
 
     # place the divergence time and mutation rate onto the label
     for node in tree.traverse_postorder():
-        if node.is_leaf():
-            continue
+        #if node.is_leaf():
+        #    continue
         lb = node.get_label()
         assert node.time is not None, "Failed to compute divergence time for node " + lb
         if as_date:
             divTime = days_to_date(node.time)
         else:
             divTime = str(node.time) if not bw_time else str(-node.time)
-        tag = "[t=" + divTime + "]"
+        tag = "[t=" + divTime + ",mu=" + str(node.mu) + "]" if not node.is_root() else "[t=" + divTime + "]"
         lb = lb + tag if lb else tag
         node.set_label(lb)
 
-def init_EM(tree,sampling_time,k,s=1000,refTreeFile=None,eps_tau=EPS_tau,init_rate_distr=None):
-    if refTreeFile is None:
-        mu,tau = run_lsd(tree,sampling_time,s=s,eps_tau=eps_tau)
-    else:
-        tau = init_tau_from_refTree(tree,refTreeFile,eps_tau=eps_tau)
-
-    #omega,phi = discretize(mu,k)
-    #omega,phi = discretize_uniform(k)
+def init_EM(tree,sampling_time,k=100,s=1000,input_omega=None,refTree=None,eps_tau=EPS_tau,init_rate_distr=None):
     if init_rate_distr:
         omega = init_rate_distr.omega
         phi = init_rate_distr.phi
+    elif input_omega:
+        omega = input_omega
+        phi = [random() for p in range(len(input_omega))]  
+        sp = sum(phi)
+        phi = [p/sp for p in phi] 
     else:    
-        omega,phi = discrete_lognorm(0.006,0.4,k)
-        #omega,phi = discrete_exponential(0.006,k)
+        #omega,phi = discrete_lognorm(0.006,0.4,k)
+        omega,phi = discrete_exponential(0.006,k)
+    
+    if refTree is None:
+        #mu,tau = run_lsd(tree,sampling_time,s=s,eps_tau=eps_tau)
+        N = len(list(tree.traverse_preorder()))-1
+        tau = [0]*N
+        for node in tree.traverse_preorder():
+            if not node.is_root():
+                b = node.get_edge_length()
+                tmin = b/omega[0]
+                tmax = b/omega[-1]
+                tau[node.idx] = uniform(tmin,tmax)
+    else:
+        tau = init_tau_from_refTree(tree,refTree,eps_tau=eps_tau)
     
     #omega = [0.001,0.01]
     #phi = [0.5,0.5]
@@ -170,18 +246,20 @@ def discrete_lognorm(mu,sd,k):
     sigma = sqrt(log(sd*sd+1))
     scale = 1/sqrt(sd*sd+1)
     nu = lognorm.ppf(p,sigma,0,scale)
-    density = lognorm.pdf(nu,sigma,0,scale)
+    #density = lognorm.pdf(nu,sigma,0,scale)
     omega = mu*nu
-    phi = density/sum(density)
-    
+    #phi = density/sum(density)
+    phi = [1.0/k]*k
+
     return omega,phi 
 
 def discrete_exponential(mu,k):
     p = [i/(k+1) for i in range(1,k+1)] 
     omega = expon.ppf(p,scale=mu)
-    density = expon.pdf(omega,scale=mu)
-    phi = density/sum(density)
-    
+    #density = expon.pdf(omega,scale=mu)
+    #phi = density/sum(density)
+    phi = [1.0/k]*k
+
     return omega,phi 
 
 def get_tree_bitsets(tree):
@@ -248,9 +326,9 @@ def run_lsd(tree,sampling_time,s=1000,eps_tau=EPS_tau):
     
     return mu,tau
 
-def init_tau_from_refTree(my_tree,ref_tree_file,eps_tau=EPS_tau):
+def init_tau_from_refTree(my_tree,refTree,eps_tau=EPS_tau):
     BS, bits2idx = get_tree_bitsets(my_tree)
-    refTree = read_tree_newick(ref_tree_file)
+    #refTree = read_tree_newick(ref_tree_file)
     bitset_index(refTree,BS)
     n = len(list(refTree.traverse_leaves()))
     N = 2*n-2
@@ -263,7 +341,7 @@ def init_tau_from_refTree(my_tree,ref_tree_file,eps_tau=EPS_tau):
 
     return tau        
 
-def setup_constr(tree,smpl_times,s,root_age=None,eps_tau=EPS_tau):
+def setup_constr(tree,smpl_times,s,root_age=None,eps_tau=EPS_tau,trueTreeFile=None):
     n = len(list(tree.traverse_leaves()))
     N = 2*n-2
 
@@ -273,6 +351,7 @@ def setup_constr(tree,smpl_times,s,root_age=None,eps_tau=EPS_tau):
     idx = 0
     #b = np.zeros(N)
     b = [0]*N
+    lb2idx = {}
 
     for node in tree.traverse_postorder():
         node.idx = idx
@@ -282,7 +361,9 @@ def setup_constr(tree,smpl_times,s,root_age=None,eps_tau=EPS_tau):
             node.constraint = [0.]*N
             node.constraint[node.idx] = 1
             node.t = smpl_times[node.get_label()]
-            b[node.idx] = node.edge_length
+            #b[node.idx] = node.edge_length
+            b[node.idx] = node.edge_length #if node.edge_length > MIN_b else None
+            lb2idx[node.get_label()] = node.idx
         else:
             children = node.child_nodes()      
             m = [x-y for (x,y) in zip(children[0].constraint,children[1].constraint)]
@@ -294,140 +375,245 @@ def setup_constr(tree,smpl_times,s,root_age=None,eps_tau=EPS_tau):
                 node.constraint = children[0].constraint
                 node.constraint[node.idx] = 1
                 node.t = children[0].t
-                b[node.idx] = node.edge_length
+                #b[node.idx] = node.edge_length
+                b[node.idx] = node.edge_length #if node.edge_length > MIN_b else None
+                lb2idx[node.get_label()] = node.idx
             elif root_age is not None:
                 m = children[0].constraint
                 dt_i = children[0].t - root_age
                 M.append(m) 
                 dt.append(dt_i)  
 
-    return M,dt,b
+    if trueTreeFile is not None:
+        stds = [0]*N
+        trueTree = read_tree_newick(trueTreeFile) 
+        for node in trueTree.traverse_postorder():
+            lb = node.get_label()
+            if lb in lb2idx:
+                idx = lb2idx[lb]
+                stds[idx] = sqrt(node.edge_length/s)
+    else:
+        stds = [sqrt(b_i/s + PSEUDO/s/s) for b_i in b]                   
+
+    return M,dt,b,stds
 
 def log_sum_exp(numlist):
     # using log-trick to compute log(sum(exp(x) for x in numlist))
     # mitigate the problem of underflow
     try:
-        minx = min([x for x in numlist if x != -INF])
+        minx = min([x for x in numlist if x > MIN_ll])
     except:
-        return -INF    
-    s = sum(exp(x-minx) for x in numlist)
-    return minx + log(s) if s > 0 else -INF
+        return log(len(numlist)) + MIN_ll
+    s = sum(exp(x-minx) for x in numlist if x > MIN_ll)
+    #print(min(numlist),max(numlist),exp(max(numlist)-min(numlist)))
+    result = minx + log(s)  if s > 0 else log(len(numlist)) + MIN_ll
+    return result
 
-def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau):
+def run_Estep(b,s,omega,tau,phi,stds,p_eps=EPS_tau,pseudo=PSEUDO):
     N = len(b)
     k = len(omega)
-   
-    #Q = np.zeros((N,k))
     Q = []
 
-    for b_i,tau_i in zip(b,tau): 
-        #b_i = b[i]
-        #tau_i = tau[i]
+    for b_i,tau_i,std_i in zip(b,tau,stds): 
+        if b_i is None:
+            Q.append(None)
+            continue
         lq_i = [0]*k
-        var_i = b_i/s+1.0/s/s
+        #var_i = b_i/s+pseudo/s/s
+        #var_i = std_i*std_i
         for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
-            lq_i[j] = -(b_i-omega_j*tau_i)**2/2/var_i + log(phi_j)
-            #omega_j = omega[j]
-            #phi_j = phi[j]
-            #q_i[j] = norm.pdf(b_i,omega_j*tau_i,sigma_i)*phi_j
-            #q_i[j] = (omega_j**x_i)*exp(-s*omega_j*tau_i)*phi_j
-        
-        #Q[i] = q_i/sum(q_i)
-        #s_qi = sum(q_i)
+            var_ij = omega_j*tau_i/s
+            #lq_i[j] = -(b_i-omega_j*tau_i)**2/2/var_i + log(phi_j)
+            #lq_i[j] = -(b_i-omega_j*tau_i)**2/2/var_ij + log(phi_j) - log(var_ij)/2
+            lq_i[j] = -(b_i-omega_j*tau_i)**2*s/2/omega_j/tau_i + log(phi_j) - (log(omega_j)+log(tau_i)-log(s))/2
         s_lqi = log_sum_exp(lq_i)
-        Q.append([exp(x-s_lqi) for x in lq_i])
-        #Q.append([x/s_qi for x in q_i])
-        
-    #return np.matrix(Q)
+        q_i = [exp(x-s_lqi) for x in lq_i]
+        s_qi = sum(q_i)
+        #Q.append([q/s_qi for q in q_i])
+        if s_qi < 1e-10:
+            q_i = [1.0/k]*k
+        else:
+            q_i = [x/s_qi for x in q_i]
+        Q.append(q_i)
     return Q
 
-def run_Mstep(b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False):
-    phi_star = compute_phi_star(Q) if not fixed_phi else phi
-    tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
+def run_Estep_naive(b,s,omega,tau,phi,stds,p_eps=EPS_tau,pseudo=PSEUDO):
+    N = len(b)
+    k = len(omega)
+    Q = []
 
-    return phi_star, tau_star
+    for b_i,tau_i,std_i in zip(b,tau,stds): 
+        if b_i is None:
+            Q.append(None)
+            continue
+        q_i = [0]*k
+        for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
+            var_ij = omega_j*tau_i/s
+            q_i[j] = norm.pdf(b_i,omega_j*tau_i,sqrt(var_ij))*phi_j
+        s_qi = sum(q_i)
+        Q.append([q_ij/s_qi for q_ij in q_i])
+    return Q
+
+def run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,pseudo=PSEUDO):
+    #phi_star = compute_phi_star(Q) if not fixed_phi else phi
+    phi_star = compute_phi_star_cvxpy(Q) if not fixed_phi else phi
+    tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
+    #tau_star = compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
     
-def f_ll(b,s,tau,omega,phi):
+    return phi_star, tau_star, omega
+
+def run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,pseudo=PSEUDO):
+    phi_star = compute_phi_star(Q) if not fixed_phi else phi
+    #phi_star = compute_phi_star_cvxpy(Q) if not fixed_phi else phi
+    for i in range(100):
+        tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
+        omega_star = compute_omega_star_cvxpy(tau_star,omega,Q,b)
+        if sqrt(sum([(x-y)**2 for (x,y) in zip(omega,omega_star)])/len(omega)) < 1e-5:
+            break
+        if sqrt(sum([(x-y)**2 for (x,y) in zip(tau,tau_star)])/len(tau)) < 1e-5:
+            break
+        omega = omega_star
+        tau = tau_star    
+    return phi_star, tau_star, omega_star
+    
+def f_ll(b,s,tau,omega,phi,stds,pseudo=PSEUDO):
     ll = 0
     k = len(phi)
-    for (tau_i,b_i) in zip(tau,b):
-        #ll_i = 0
+    for (tau_i,b_i,std_i) in zip(tau,b,stds):
+        if b_i is None:
+            continue
         ll_i = [0]*k
-        #tau_i = tau[i]
-        #b_i = b[i]
-        #sigma_i = sqrt(b_i/s+1.0/s/s)
-        var_i = b_i/s+1.0/s/s
-        #for j in range(len(omega)):
+        #var_i = b_i/s+pseudo/s/s
+        #var_i = std_i*std_i
         for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
-            #omega_j = omega[j]
-            #phi_j = phi[j]
-            #ll_i += norm.pdf(b_i,omega_j*tau_i,sigma_i)*phi_j
-            ll_i[j] = log(1/sqrt(2*pi*var_i))-(b_i-tau_i*omega_j)**2/2/var_i + log(phi_j)
-        #ll += log(ll_i)    
-        ll += log_sum_exp(ll_i)
+            var_ij = tau_i*omega_j/s
+            #ll_i[j] = log(1/sqrt(2*pi)/std_i)-(b_i-tau_i*omega_j)**2/2/var_i + log(phi_j)
+            #ll_i[j] = log(1/sqrt(2*pi)/sqrt(var_ij))-(b_i-tau_i*omega_j)**2/2/var_ij + log(phi_j)
+            ll_i[j] = -log(sqrt(2*pi))-(log(omega_j)+log(tau_i)-log(s))/2-(b_i-tau_i*omega_j)**2/2/var_ij + log(phi_j)
+        #print(log_sum_exp(ll_i))
+        result = log_sum_exp(ll_i)
+        ll += result
+    return ll
 
+def f_ll_naive(b,s,tau,omega,phi,stds,pseudo=PSEUDO):
+    ll = 0
+    for b_i,tau_i,std_i in zip(b,tau,stds): 
+        lli = 0
+        for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
+            var_ij = omega_j*tau_i/s
+            lli += norm.pdf(b_i,omega_j*tau_i,sqrt(var_ij))*phi_j
+        ll += log(lli)
     return ll
 
 def compute_phi_star(Q):
-    #return np.array(np.mean(Q,axis=0,dtype=float))[0]
-    N = len(Q)
     k = len(Q[0])
     phi = [0]*k
+    N = 0
     for Qi in Q:
-        phi = [x+y for (x,y) in zip(phi,Qi)]
+        if Qi is not None:
+            phi = [x+y for (x,y) in zip(phi,Qi)]
+            N += 1
     return [x/N for x in phi]    
 
-def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau):
+def compute_phi_star_cvxpy(Q,gamma=10):
+    k = len(Q[0])
+    S = [0]*k
+    for Qi in Q:
+        S = [x+y for (x,y) in zip(S,Qi)]
+
+    var_phi = cp.Variable(k)
+       
+    objective = cp.Maximize(np.array(S).T @ cp.log(var_phi) + gamma*cp.sum(cp.entr(var_phi)) ) 
+    #objective = cp.Maximize( cp.sum(cp.entr(var_phi)))
+    constraints = [ (np.zeros(k)+1).T @ var_phi == 1, var_phi >= 0 ]
+
+    prob = cp.Problem(objective,constraints)
+    f_star = prob.solve(verbose=False)
+    phi_star = var_phi.value
+
+    return phi_star
+
+def compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEUDO):
+    N = len(b)
+    k = len(omega)
+    
+    def f(x,*args):
+    # objective function
+        Q,omega,b = args
+        return sum(Q[i][j]*s/omega[j]/x[i]*(b[i]-omega[j]*x[i])**2 + Q[i][j]*log(omega[j]*x[i]) for i in range(N) for j in range(k))
+    
+    def g(x,*args):
+    # Jacobian
+        Q,omega,b = args
+        return np.array([sum(q_i[j]*s*(omega[j]-b_i**2/omega[j]/tau_i**2) + q_i[j]/tau_i for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
+    
+    def h(x,*args):
+    # Hessian
+        Q,omega,b = args
+        return diags([sum(2*q_i[j]*s*b_i**2/omega[j]/tau_i**3 - q_i[j]/tau_i**2 for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
+    
+    linear_constraint = LinearConstraint(csr_matrix(M),dt,dt,keep_feasible=False)
+    bounds = Bounds(np.zeros(N)+eps_tau,np.zeros(N)+1e5,keep_feasible=False)
+    args = (Q,omega,b)
+
+    result = minimize(fun=f,method="trust-constr",x0=tau,args=args,bounds=bounds,constraints=[linear_constraint],options={'disp':True,'verbose':1},jac=g,hess=h)
+    tau_star = result.x
+
+    return tau_star
+
+def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEUDO):
     N = len(b)
     k = len(omega)
     Pd = np.zeros(N)
     q = np.zeros(N)
 
     for i in range(N):
+        if b[i] is None:
+            continue
         for j in range(k):
-            Pd[i] += Q[i][j]*omega[j]**2
-            q[i] -= Q[i][j]*omega[j]
-        Pd[i] /= (b[i] + 1.0/s)
-        q[i] *= (2*b[i]/(b[i]+1.0/s))
+            w_ij = omega[j]*tau[i] # weight by the variance multiplied with s; use previous tau to estimate
+            #w_ij = stds[i]*stds[i]*s
+            Pd[i] += Q[i][j]*omega[j]**2/w_ij
+            q[i] -= Q[i][j]*omega[j]/w_ij
+        #Pd[i] /= (b[i] + pseudo/s)
+        #w_i = stds[i]*stds[i]*s # weight by the variance muliplied with s
+        #Pd[i] /= w_i
+        #q[i] *= (2*b[i]/w_i)
+        q[i] *= 2*b[i]
           
-    P = diag(Pd)        
-    #param_1 = cp.Parameter(q.shape,nonneg=True,value=q)
-    #param_2 = cp.Parameter(P.shape,nonneg=True,value=P)
-    N = len(tau)
+    P = np.diag(Pd)        
     var_tau = cp.Variable(N)
        
     objective = cp.Minimize(cp.quad_form(var_tau,P) + q.T @ var_tau)
-    constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)*var_tau == np.array(dt)]
+    upper_bound = np.array([float("inf") if b_i is not None else 1.0/6 for b_i in b])
+    constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
 
     prob = cp.Problem(objective,constraints)
-    f_star = prob.solve(verbose=True)
+    f_star = prob.solve(verbose=False,max_iter=100000)#,solver=cp.MOSEK)
     tau_star = var_tau.value
 
     return tau_star
 
-def compute_tau_star_cvxopt(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau):
+def compute_omega_star_cvxpy(tau,omega,Q,b,eps_omg=0.0001):
     N = len(b)
     k = len(omega)
-    Pd = np.zeros(N)
-    q = np.zeros(N)
+    Pd = np.zeros(k)
+    q = np.zeros(k)
 
-    for i in range(N):
-        for j in range(k):
-            Pd[i] += Q[i][j]*omega[j]**2
-            q[i] -= Q[i][j]*omega[j]
-        Pd[i] /= (b[i] + 1.0/s)
-        q[i] *= (2*b[i]/(b[i]+1.0/s))
+    for j in range(k):
+        for i in range(N):
+            w_ij = omega[j]*tau[i] # weight by the variance multiplied with s; use previous omega to estimate
+            Pd[j] += Q[i][j]*tau[i]**2/w_ij
+            q[j] -= 2*Q[i][j]*tau[i]*b[i]/w_ij
           
-    P = diag(Pd)        
-    G = -np.identity(N)  
-    h = np.zeros(N) + eps_tau
-    
-    #tau_star = cvxopt_solve_qp(P,q)
-    tau_star = quadprog_solve_qp(P,q,G,h,np.matrix(M),dt)
-    #tau_star = cvxopt_solve_qp(P,q,G,h,np.matrix(M),dt)
-    
-    print(np.matmul(np.matmul(np.transpose(tau),P),tau)+np.matmul(np.transpose(q),tau))
-    print(np.matmul(np.matmul(np.transpose(tau_star),P),tau_star)+np.matmul(np.transpose(q),tau_star))
-    #print(np.matmul(np.matrix(M),tau)-np.array(dt))
+    P = np.diag(Pd)        
+    var_omega = cp.Variable(k)
+       
+    objective = cp.Minimize(cp.quad_form(var_omega,P) + q.T @ var_omega)
+    constraints = [np.zeros(k)+eps_omg <= var_omega]
 
-    return tau_star 
+    prob = cp.Problem(objective,constraints)
+    f_star = prob.solve(verbose=False)
+    omega_star = var_omega.value
+
+    return omega_star
