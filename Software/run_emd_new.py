@@ -1,6 +1,5 @@
 #! /usr/bin/env python
 
-#from emd.emd_lib import *
 from emd.emd_normal_lib import *
 from treeswift import *
 import argparse
@@ -20,7 +19,7 @@ parser.add_argument("-f","--refTreeFile",required=False, help="A reference time 
 parser.add_argument("--assignLabel",action='store_true',help="Assign label to internal nodes. Default: NO")
 parser.add_argument("--clockFile",required=False,help="A file that defines a customized (discretized) clock model. Will override --bins")
 parser.add_argument("--bins",required=False,help="Specify the bins for the rate (i.e. omega)")
-parser.add_argument("--fixedPhi",action='store_true',help="Fix the probability distribution")
+parser.add_argument("--fixedPhi",action='store_true',help="Fix the probability distribution and optimize the bin positions instead.")
 parser.add_argument("-v","--verbose",action='store_true',help="Verbose")
 parser.add_argument("-k","--nbin",required=False,help="The number of bins to discretize the rate distribution. Default: 100")
 parser.add_argument("--maxIter",required=False,help="The maximum number of iterations for EM search. Default: 100")
@@ -58,7 +57,6 @@ if args["clockFile"] is not None:
             o,p = line.strip().split()
             omega.append(float(o))
             phi.append(float(p))
-            #phi.append(random())
     sp = sum(phi)
     phi = [p/sp for p in phi]        
     init_rate_distr = multinomial(omega,phi)

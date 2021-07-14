@@ -12,7 +12,7 @@ from emd.util import bitset_from_tree, bitset_index
 from scipy.sparse import diags
 from scipy.sparse import csr_matrix
 import cvxpy as cp
-from emd.quadprog_solvers import *
+#from emd.quadprog_solvers import *
 from random import uniform, random
 
 EPS_tau=1e-3
@@ -77,6 +77,7 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
     pre_llh = f_ll(b,s,tau,omega,phi,stds,pseudo=pseudo)
     if verbose:
         print("Initial likelihood: " + str(pre_llh))
+    #Q = [[1.0/k]*k for i in range(len(tau))]
     for i in range(1,maxIter+1):
         if verbose:
             print("EM iteration " + str(i))
@@ -85,8 +86,10 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
         Q = run_Estep(b,s,omega,tau,phi,stds,pseudo=pseudo)
         if verbose:
             print("Mstep ...")
-        next_phi,next_tau,next_omega = run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
-        #next_phi,next_tau,next_omega = run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
+        if fixed_phi: # in the new method, if phi is fixed, then omega must be optimized and vice versa
+            next_phi,next_tau,next_omega = run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
+        else:
+            next_phi,next_tau,next_omega = run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
         llh = f_ll(b,s,next_tau,next_omega,next_phi,stds,pseudo=pseudo)
         #llh = elbo(tau,phi,omega,Q,b,s)
         if verbose:
@@ -100,7 +103,7 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
         tau = next_tau    
         omega = next_omega
         pre_llh = llh    
-        Q = run_Estep(b,s,omega,tau,phi,stds,pseudo=pseudo)
+        #Q = run_Estep(b,s,omega,tau,phi,stds,pseudo=pseudo)
 
     # convert branch length to time unit and compute mu for each branch
     for node in tree.traverse_postorder():
@@ -462,9 +465,15 @@ def run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixe
 def run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,pseudo=PSEUDO):
     phi_star = compute_phi_star(Q) if not fixed_phi else phi
     #phi_star = compute_phi_star_cvxpy(Q) if not fixed_phi else phi
-    tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
-    omega_star = compute_omega_star_cvxpy(tau_star,omega,Q,b)
-    
+    for i in range(100):
+        tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
+        omega_star = compute_omega_star_cvxpy(tau_star,omega,Q,b)
+        if sqrt(sum([(x-y)**2 for (x,y) in zip(omega,omega_star)])/len(omega)) < 1e-5:
+            break
+        if sqrt(sum([(x-y)**2 for (x,y) in zip(tau,tau_star)])/len(tau)) < 1e-5:
+            break
+        omega = omega_star
+        tau = tau_star    
     return phi_star, tau_star, omega_star
     
 def f_ll(b,s,tau,omega,phi,stds,pseudo=PSEUDO):
@@ -577,10 +586,10 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
        
     objective = cp.Minimize(cp.quad_form(var_tau,P) + q.T @ var_tau)
     upper_bound = np.array([float("inf") if b_i is not None else 1.0/6 for b_i in b])
-    constraints = [np.zeros(N)+eps_tau <= var_tau, var_tau <= upper_bound, csr_matrix(M)*var_tau == np.array(dt)]
+    constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
 
     prob = cp.Problem(objective,constraints)
-    f_star = prob.solve(verbose=False,max_iter=100000)
+    f_star = prob.solve(verbose=False,max_iter=100000)#,solver=cp.MOSEK)
     tau_star = var_tau.value
 
     return tau_star
