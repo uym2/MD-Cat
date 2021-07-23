@@ -55,18 +55,18 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
     for r in range(nrep):
         print("Solving EM with init point + " + str(r+1))
         new_tree = read_tree_newick(tree.newick())
-        #try:
-        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose)
-        print("New llh: " + str(llh))
-        print([(o,p) for (o,p) in zip(omega,phi)])
-        #print(new_tree.newick())  
-        if llh > best_llh:
-            best_llh = llh  
-            best_tree = new_tree
-            best_phi = phi
-            best_omega = omega
-        #except:
-        #    print("Failed to optimize using this init point!")        
+        try:
+            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose)
+            print("New llh: " + str(llh))
+            print([(o,p) for (o,p) in zip(omega,phi)])
+            #print(new_tree.newick())  
+            if llh > best_llh:
+                best_llh = llh  
+                best_tree = new_tree
+                best_phi = phi
+                best_omega = omega
+        except:
+            print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
 def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=0.01,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,pseudo=PSEUDO,verbose=False):
@@ -89,7 +89,7 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
         if fixed_phi: # in the new method, if phi is fixed, then omega must be optimized and vice versa
             next_phi,next_tau,next_omega = run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
         else:
-            next_phi,next_tau,next_omega = run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
+            next_phi,next_tau,next_omega = run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,pseudo=pseudo)
         llh = f_ll(b,s,next_tau,next_omega,next_phi,stds,pseudo=pseudo)
         #llh = elbo(tau,phi,omega,Q,b,s)
         if verbose:
@@ -462,18 +462,23 @@ def run_Mstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixe
     
     return phi_star, tau_star, omega
 
-def run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,pseudo=PSEUDO):
+def run_MMstep(b,s,omega,tau,phi,Q,M,dt,stds,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,fixed_omega=False,pseudo=PSEUDO):
     phi_star = compute_phi_star(Q) if not fixed_phi else phi
     #phi_star = compute_phi_star_cvxpy(Q) if not fixed_phi else phi
-    for i in range(100):
-        tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
-        omega_star = compute_omega_star_cvxpy(tau_star,omega,Q,b)
-        if sqrt(sum([(x-y)**2 for (x,y) in zip(omega,omega_star)])/len(omega)) < 1e-5:
-            break
-        if sqrt(sum([(x-y)**2 for (x,y) in zip(tau,tau_star)])/len(tau)) < 1e-5:
-            break
-        omega = omega_star
+    omega_0 = omega
+    #tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
+    tau_0 = tau
+    for i in range(1):
+        tau_star = compute_tau_star_cvxpy(tau_0,omega,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=pseudo) if not fixed_tau else tau
+        #tau_star = compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau/2,pseudo=pseudo) if not fixed_tau else tau
+        #if not fixed_tau and sqrt(sum([(x-y)**2 for (x,y) in zip(tau,tau_star)])/len(tau)) < 1e-5:
+        #    break
         tau = tau_star    
+        omega_star = compute_omega_star_cvxpy(tau,tau,omega_0,Q,b) if not fixed_omega else omega
+        #omega_star = compute_omega_star_scipy(tau,omega,Q,b,s,M,dt,stds,pseudo=pseudo) if not fixed_omega else omega
+        #if not fixed_omega and sqrt(sum([(x-y)**2 for (x,y) in zip(omega,omega_star)])/len(omega)) < 1e-5:
+        #    break
+        omega = omega_star
     return phi_star, tau_star, omega_star
     
 def f_ll(b,s,tau,omega,phi,stds,pseudo=PSEUDO):
@@ -540,7 +545,7 @@ def compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
     def f(x,*args):
     # objective function
         Q,omega,b = args
-        return sum(Q[i][j]*s/omega[j]/x[i]*(b[i]-omega[j]*x[i])**2 + Q[i][j]*log(omega[j]*x[i]) for i in range(N) for j in range(k))
+        return sum(Q[i][j]*s/omega[j]/x[i]*(b[i]-omega[j]*x[i])**2 + Q[i][j]*(log(abs(omega[j]))+log(abs(x[i]))) for i in range(N) for j in range(k))
     
     def g(x,*args):
     # Jacobian
@@ -553,15 +558,41 @@ def compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
         return diags([sum(2*q_i[j]*s*b_i**2/omega[j]/tau_i**3 - q_i[j]/tau_i**2 for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
     
     linear_constraint = LinearConstraint(csr_matrix(M),dt,dt,keep_feasible=False)
-    bounds = Bounds(np.zeros(N)+eps_tau,np.zeros(N)+1e5,keep_feasible=False)
+    bounds = Bounds(np.zeros(N)+eps_tau,np.zeros(N)+10000,keep_feasible=True)
     args = (Q,omega,b)
 
-    result = minimize(fun=f,method="trust-constr",x0=tau,args=args,bounds=bounds,constraints=[linear_constraint],options={'disp':True,'verbose':1},jac=g,hess=h)
+    result = minimize(fun=f,method="trust-constr",x0=tau,args=args,bounds=bounds,constraints=[linear_constraint],options={'disp':False,'verbose':0},jac=g,hess=h)
     tau_star = result.x
-
     return tau_star
 
-def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEUDO):
+def compute_omega_star_scipy(tau,omega,Q,b,s,M,dt,stds,eps_omega=0.0001,pseudo=PSEUDO):
+    N = len(b)
+    k = len(omega)
+    
+    def f(x,*args):
+    # objective function
+        Q,tau,b = args
+        return sum(Q[i][j]*s/x[j]/tau[i]*(b[i]-x[j]*tau[i])**2 + Q[i][j]*log(x[j]*tau[i]) for i in range(N) for j in range(k))
+    
+    def g(x,*args):
+    # Jacobian
+        #Q,tau,b = args
+        return np.array([sum(q_i[j]*s*(tau_i-b_i**2/tau_i/x[j]**2) + q_i[j]/x[j] for (q_i,tau_i,b_i) in zip(Q,tau,b)) for j in range(k)])
+    
+    def h(x,*args):
+    # Hessian
+        Q,tau,b = args
+        return diags([sum(2*q_i[j]*s*b_i**2/tau_i/x[j]**3 - q_i[j]/x[j]**2 for (q_i,tau_i,b_i) in zip(Q,tau,b)) for j in range(k)])
+    
+    bounds = Bounds(np.zeros(k)+eps_omega,np.zeros(k)+1e5,keep_feasible=True)
+    args = (Q,tau,b)
+
+    result = minimize(fun=f,method="trust-constr",x0=omega,args=args,bounds=bounds,options={'disp':False,'verbose':0},jac=g,hess=h)
+    omega_star = result.x
+
+    return omega_star
+
+def compute_tau_star_cvxpy(tau_0,omega,omega_0,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEUDO):
     N = len(b)
     k = len(omega)
     Pd = np.zeros(N)
@@ -571,7 +602,7 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
         if b[i] is None:
             continue
         for j in range(k):
-            w_ij = omega[j]*tau[i] # weight by the variance multiplied with s; use previous tau to estimate
+            w_ij = omega_0[j]*tau_0[i] # weight by the variance multiplied with s; use previous tau to estimate
             #w_ij = stds[i]*stds[i]*s
             Pd[i] += Q[i][j]*omega[j]**2/w_ij
             q[i] -= Q[i][j]*omega[j]/w_ij
@@ -594,15 +625,15 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,stds,eps_tau=EPS_tau,pseudo=PSEU
 
     return tau_star
 
-def compute_omega_star_cvxpy(tau,omega,Q,b,eps_omg=0.0001):
+def compute_omega_star_cvxpy(tau,tau_0,omega_0,Q,b,eps_omg=0.0001):
     N = len(b)
-    k = len(omega)
+    k = len(omega_0)
     Pd = np.zeros(k)
     q = np.zeros(k)
 
     for j in range(k):
         for i in range(N):
-            w_ij = omega[j]*tau[i] # weight by the variance multiplied with s; use previous omega to estimate
+            w_ij = omega_0[j]*tau_0[i] # weight by the variance multiplied with s; use previous omega to estimate
             Pd[j] += Q[i][j]*tau[i]**2/w_ij
             q[j] -= 2*Q[i][j]*tau[i]*b[i]/w_ij
           
