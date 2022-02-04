@@ -23,6 +23,7 @@ parser.add_argument("--fixedPhi",action='store_true',help="Fix the probability d
 parser.add_argument("-v","--verbose",action='store_true',help="Verbose")
 parser.add_argument("-k","--nbin",required=False,help="The number of bins to discretize the rate distribution. Default: 100")
 parser.add_argument("--maxIter",required=False,help="The maximum number of iterations for EM search. Default: 100")
+parser.add_argument("--extraData",required=False,help="The extra observations per branch. Default: None")
 
 
 args = vars(parser.parse_args())
@@ -41,6 +42,16 @@ maxIter = int(args["maxIter"]) if args["maxIter"] else 100
 fixedPhi = args["fixedPhi"]
 
 refTree = read_tree_newick(refTreeFile) if refTreeFile else None
+
+extraData = {}
+if args["extraData"] is not None:
+    with open(args["extraData"],'r') as fin:
+        for line in fin:
+            name,length = line.split()
+            if name in extraData:
+                extraData[name].append(float(length))
+            else:    
+                extraData[name] = [float(length)]
 
 with open(timeFile,"r") as fin:
     for line in fin:
@@ -77,7 +88,7 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=False,k=k,verbose=args["verbose"])                 
+best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=False,k=k,verbose=args["verbose"],extra_data=extraData)                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):
