@@ -4,8 +4,10 @@ from emd.emd_normal_lib import *
 from treeswift import *
 import argparse
 from simulator.multinomial import *
-from random import random
+import random
 from emd.binning_lib import init_bins
+
+random.seed(a=1105)
 
 parser = argparse.ArgumentParser()
 
