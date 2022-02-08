@@ -88,9 +88,9 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
         if verbose:
             print("Mstep ...")   
         if fixed_phi: # in the new method, if phi is fixed, then omega must be optimized and vice versa
-            next_phi,next_tau,next_omega = run_MMstep(b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau)
+            next_phi,next_tau,next_omega = run_MMstep(b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau)
         else:
-            next_phi,next_tau,next_omega = run_Mstep(b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau)
+            next_phi,next_tau,next_omega = run_Mstep(b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau)
         llh = f_ll(b,s,next_tau,next_omega,next_phi)
         #llh = elbo(tau,phi,omega,Q,b,s)
         if verbose:
@@ -458,13 +458,15 @@ def run_Mstep(b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau
     
     return phi_star, tau_star, omega
 
-def run_MMstep(b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False):
+def run_MMstep(b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False):
     phi_star = compute_phi_star(Q) if not fixed_phi else phi
     #phi_star = compute_phi_star_cvxpy(Q) if not fixed_phi else phi
+    tau = compute_tau_star_cvxpy(tau,omega,Q,b_avg,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
     for i in range(100):
-        #tau_star = compute_tau_star_sca(tau,omega,Q,b_sq,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
-        tau_star = compute_tau_star_cvxpy(tau,omega,Q,b_avg,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
-        omega_star = compute_omega_star_cvxpy(tau_star,omega,Q,b_avg)
+        #tau_star = compute_tau_star_cvxpy(tau,omega,Q,b_avg,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
+        tau_star = compute_tau_star_sca(tau,omega,Q,b_sq,b,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
+        #omega_star = compute_omega_star_cvxpy(tau_star,omega,Q,b_avg)
+        omega_star = compute_omega_star_sca(tau_star,omega,Q,b_sq,b,s)
         if sqrt(sum([(x-y)**2 for (x,y) in zip(omega,omega_star)])/len(omega)) < 1e-5:
             break
         if sqrt(sum([(x-y)**2 for (x,y) in zip(tau,tau_star)])/len(tau)) < 1e-5:
@@ -607,21 +609,68 @@ def compute_omega_star_cvxpy(tau,omega,Q,b,eps_omg=0.0001):
 
     return omega_star
 
-def compute_tau_star_sca(tau,omega,Q,b_sq,s,M,dt,eps_tau=EPS_tau):
+def compute_f_MM(tau,omega,Q,b,s):
+    N = len(tau)
+    k = len(omega)
+    m = len(b[0])
+
+    return sum(s*Q[i][j]*(b[i][l]-omega[j]*tau[i])**2/omega[j]/tau[i] + Q[i][j]*log(omega[j]*tau[i]) for i in range(N) for j in range(k) for l in range(m))
+
+def compute_tau_star_sca(tau,omega,Q,b_sq,b,s,M,dt,eps_tau=EPS_tau):
     N = len(b_sq)
     k = len(omega)
 
     O = [sum(Q[i][j]/omega[j] for j in range(k)) for i in range(N)]
 
-    var_tau = cp.Variable(N)
-    tau_inv = cp.vstack(cp.inv_pos(t) for t in var_tau)
-       
-    objective = cp.Minimize(cp.multiply(b_sq,O).T @ tau_inv + var_tau.T@csr_matrix(Q)@omega)
-    constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
+   
+    tau0 = [x for x in tau]
+    f_star_pre = compute_f_MM(tau0,omega,Q,b,s)
+    for i in range(100):
+        print("tau",i,f_star_pre)
+        var_tau = cp.Variable(N,pos=True)
+        tau_inv = cp.vstack(cp.inv_pos(t) for t in var_tau)
+        constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
+        tau0_inv = cp.vstack(1/t for t in tau0)
+           
+        objective = cp.Minimize(s*cp.multiply(b_sq,O).T @ tau_inv + 
+                                s*var_tau.T @ csr_matrix(Q) @ omega + 
+                                tau0_inv.T @ var_tau)
 
-    prob = cp.Problem(objective,constraints)
-    #f_star = prob.solve(verbose=False,max_iter=100000)#,solver=cp.MOSEK)
-    f_star = prob.solve(verbose=False,solver=cp.SCS)
-    tau_star = var_tau.value
+        prob = cp.Problem(objective,constraints)
+        prob.solve(verbose=False,solver=cp.ECOS)
+        tau0 = [x for x in var_tau.value]
+        f_star = compute_f_MM(tau0,omega,Q,b,s)
+        if abs(f_star_pre-f_star) < 1e-3:
+            break
+        f_star_pre = f_star    
+    return tau0
 
-    return tau_star
+def compute_omega_star_sca(tau,omega,Q,b_sq,b,s,eps_omg=0.0001):
+    N = len(b_sq)
+    k = len(omega)
+
+    T = cp.vstack(sum(Q[i][j]*b_sq[i]/tau[i] for i in range(N)) for j in range(k))
+
+    omega0 = [x for x in omega]
+    f_star_pre = compute_f_MM(tau,omega0,Q,b,s)
+    
+    for i in range(100):
+        print("omega",i,f_star_pre)
+        var_omega = cp.Variable(k,pos=True)
+        omega_inv = cp.vstack(cp.inv_pos(w) for w in var_omega)
+        tau_transpose = cp.vstack(t for t in tau).T
+        omega0_inv = cp.multiply(cp.vstack(sum(q[j] for q in Q) for j in range(k)),cp.vstack(1/w for w in omega0))
+
+        objective = cp.Minimize(s*T.T @ omega_inv + 
+                                s*tau_transpose @ csr_matrix(Q) @ var_omega +
+                                omega0_inv.T @ var_omega)
+        constraints = [np.zeros(k)+eps_omg <= var_omega]
+
+        prob = cp.Problem(objective,constraints)
+        prob.solve(verbose=False,solver=cp.CVXOPT)
+        omega0 = [x for x in var_omega.value]
+        f_star = compute_f_MM(tau,omega0,Q,b,s)
+        if abs(f_star_pre-f_star) < 1e-3:
+            break
+        f_star_pre = f_star
+    return omega0
