@@ -637,7 +637,7 @@ def compute_tau_star_sca(tau,omega,Q,b_sq,b,s,M,dt,eps_tau=EPS_tau):
                                 tau0_inv.T @ var_tau)
 
         prob = cp.Problem(objective,constraints)
-        prob.solve(verbose=False,solver=cp.ECOS)
+        prob.solve(verbose=False,solver=cp.MOSEK)
         tau0 = [x for x in var_tau.value]
         f_star = compute_f_MM(tau0,omega,Q,b,s)
         if abs(f_star_pre-f_star) < 1e-3:
@@ -667,7 +667,7 @@ def compute_omega_star_sca(tau,omega,Q,b_sq,b,s,eps_omg=0.0001):
         constraints = [np.zeros(k)+eps_omg <= var_omega]
 
         prob = cp.Problem(objective,constraints)
-        prob.solve(verbose=False,solver=cp.CVXOPT)
+        prob.solve(verbose=False,solver=cp.MOSEK)
         omega0 = [x for x in var_omega.value]
         f_star = compute_f_MM(tau,omega0,Q,b,s)
         if abs(f_star_pre-f_star) < 1e-3:
