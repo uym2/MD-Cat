@@ -19,6 +19,7 @@ parser.add_argument("-p","--rep",required=False, help="The number of random repl
 parser.add_argument("-l","--seqLen",required=False, help="The length of the sequences. Default: 1000")
 parser.add_argument("-f","--refTreeFile",required=False, help="A reference time tree as initial solution. Default: None. LSD will be run internally and used as reference")
 parser.add_argument("--assignLabel",action='store_true',help="Assign label to internal nodes. Default: NO")
+parser.add_argument("--fast",action='store_true',help="Fast optimization technique that does not use successive convex approximation. Default: NO")
 parser.add_argument("--clockFile",required=False,help="A file that defines a customized (discretized) clock model. Will override --bins")
 parser.add_argument("--bins",required=False,help="Specify the bins for the rate (i.e. omega)")
 parser.add_argument("--fixedPhi",action='store_true',help="Fix the probability distribution and optimize the bin positions instead.")
@@ -42,6 +43,7 @@ refTreeFile = args["refTreeFile"]
 smpl_times = {}
 maxIter = int(args["maxIter"]) if args["maxIter"] else 100
 fixedPhi = args["fixedPhi"]
+doSCA = not(args["fast"])
 
 refTree = read_tree_newick(refTreeFile) if refTreeFile else None
 
@@ -90,7 +92,7 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=False,k=k,verbose=args["verbose"],extra_data=extraData)                 
+best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=False,k=k,verbose=args["verbose"],extra_data=extraData,do_sca=doSCA)                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):
