@@ -24,6 +24,7 @@ parser.add_argument("--assignLabel",action='store_true',help="Assign label to in
 parser.add_argument("--doSCA",action='store_true',help="Optimization using successive convex approximation; only works without variance approximation. Default: NO")
 parser.add_argument("--varApprx",action='store_true',help="Variance approximation: estimate the error variance by the estimated branch length. Default: NO")
 parser.add_argument("--clockFile",required=False,help="A file that defines a customized (discretized) clock model. Will override --bins")
+parser.add_argument("--muAvg",required=False,help="Fix the average mutation rate to this value in the first round search")
 parser.add_argument("--bins",required=False,help="Specify the bins for the rate (i.e. omega)")
 parser.add_argument("--fixedPhi",action='store_true',help="Fix the probability distribution and optimize the bin positions instead.")
 parser.add_argument("--fixedTau",action='store_true',help="Fix the time tree and optimize the bin positions.")
@@ -53,6 +54,7 @@ fixedPhi = args["fixedPhi"]
 fixedTau = args["fixedTau"]
 doSCA = args["doSCA"]
 varApprx = args["varApprx"]
+muAvg = float(args["muAvg"]) if args["muAvg"] is not None else None
 
 refTree = read_tree_newick(refTreeFile) if refTreeFile else None
 
@@ -101,12 +103,11 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=fixedTau,k=k,verbose=args["verbose"],extra_data=extraData,do_sca=doSCA,var_apprx=varApprx)                 
+best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=fixedTau,k=k,verbose=args["verbose"],extra_data=extraData,do_sca=doSCA,var_apprx=varApprx,mu_avg=muAvg)                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):
         finfo.write(str(o) + " " + str(p) + "\n")
 print("Best likelihood: " + str(best_llh))       
 end = time.time()
-print("Runtime: ", end - start) 
- 
+print("Runtime: ", end - start)
