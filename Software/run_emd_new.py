@@ -26,8 +26,9 @@ parser.add_argument("--varApprx",action='store_true',help="Variance approximatio
 parser.add_argument("--clockFile",required=False,help="A file that defines a customized (discretized) clock model. Will override --bins")
 parser.add_argument("--muAvg",required=False,help="Fix the average mutation rate to this value in the first round search")
 parser.add_argument("--bins",required=False,help="Specify the bins for the rate (i.e. omega)")
-parser.add_argument("--fixedPhi",action='store_true',help="Fix the probability distribution and optimize the bin positions instead.")
-parser.add_argument("--fixedTau",action='store_true',help="Fix the time tree and optimize the bin positions.")
+parser.add_argument("--fixedPhi",action='store_true',help="Fix the density of the bins; must be used without fixedOmega to optimize the bin positions.")
+parser.add_argument("--fixedTau",action='store_true',help="Fix the time tree.")
+parser.add_argument("--fixedOmega",action='store_true',help="Fix the bin positions; must be used without fixedPhi to optimize the density of each bin.")
 parser.add_argument("-v","--verbose",action='store_true',help="Verbose")
 parser.add_argument("-k","--nbin",required=False,help="The number of bins to discretize the rate distribution. Default: 100")
 parser.add_argument("--maxIter",required=False,help="The maximum number of iterations for EM search. Default: 100")
@@ -52,6 +53,7 @@ smpl_times = {}
 maxIter = int(args["maxIter"]) if args["maxIter"] else 100
 fixedPhi = args["fixedPhi"]
 fixedTau = args["fixedTau"]
+fixedOmega = args["fixedOmega"]
 doSCA = args["doSCA"]
 varApprx = args["varApprx"]
 muAvg = float(args["muAvg"]) if args["muAvg"] is not None else None
@@ -103,7 +105,7 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=fixedTau,k=k,verbose=args["verbose"],extra_data=extraData,do_sca=doSCA,var_apprx=varApprx,mu_avg=muAvg)                 
+best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=fixedTau,fixed_omega=fixedOmega,k=k,verbose=args["verbose"],extra_data=extraData,do_sca=doSCA,var_apprx=varApprx,mu_avg=muAvg)                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):

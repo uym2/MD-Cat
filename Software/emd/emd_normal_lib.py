@@ -467,19 +467,18 @@ def run_Mstep(b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau
     
     return phi_star, tau_star, omega
 
-def run_MMstep(b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,do_sca=True,var_apprx=False,mu_avg=None):
+def run_MMstep(b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,fixed_omega=False,do_sca=True,var_apprx=False,mu_avg=None):
     phi_star = compute_phi_star(Q) if not fixed_phi else phi
-    #omega = compute_omega_star_cvxpy(tau,omega,Q,b_avg,var_apprx=var_apprx)
     tau = compute_tau_star_cvxpy(tau,omega,Q,b_avg,s,M,dt,eps_tau=EPS_tau,var_apprx=var_apprx) if not fixed_tau else tau
     if do_sca:
-        omega = compute_omega_star_sca(tau,omega,Q,b_sq,b,s)
+        omega = compute_omega_star_sca(tau,omega,Q,b_sq,b,s) if not fixed_omega else omega
         tau = compute_tau_star_sca(tau,omega,Q,b_sq,b,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
     for i in range(100):
         if do_sca:
-            omega_star = compute_omega_star_sca(tau,omega,Q,b_sq,b,s)
+            omega_star = compute_omega_star_sca(tau,omega,Q,b_sq,b,s) if not fixed_omega else omega
             tau_star = compute_tau_star_sca(tau,omega_star,Q,b_sq,b,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
         else:
-            omega_star = compute_omega_star_cvxpy(tau,omega,Q,b_avg,var_apprx=var_apprx,mu_avg=mu_avg)
+            omega_star = compute_omega_star_cvxpy(tau,omega,Q,b_avg,var_apprx=var_apprx,mu_avg=mu_avg) if not fixed_omega else omega
             tau_star = compute_tau_star_cvxpy(tau,omega_star,Q,b_avg,s,M,dt,eps_tau=EPS_tau,var_apprx=var_apprx) if not fixed_tau else tau
         if sqrt(sum([(x-y)**2 for (x,y) in zip(omega,omega_star)])/len(omega)) < 1e-5:
             break
