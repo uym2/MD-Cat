@@ -56,21 +56,24 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
     for r in range(nrep):
         print("Solving EM with init point + " + str(r+1))
         new_tree = read_tree_newick(tree.newick())
-        try:
-            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,do_sca=do_sca,var_apprx=var_apprx,mu_avg=mu_avg,fixed_omega=fixed_omega)
-            new_ref = new_tree
-            new_tree = read_tree_newick(tree.newick())
-            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega,phi),maxIter=maxIter,refTree=new_ref,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,do_sca=do_sca,var_apprx=var_apprx,mu_avg=None,fixed_omega=fixed_omega) 
-            print("New llh: " + str(llh))
-            print(new_tree.newick()) 
-            print(sum(o*p for o,p in zip(omega,phi))) 
-            if llh > best_llh:
-                best_llh = llh  
-                best_tree = new_tree
-                best_phi = phi
-                best_omega = omega
-        except:
-            print("Failed to optimize using this init point!")        
+        #try:
+        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,do_sca=do_sca,var_apprx=var_apprx,mu_avg=mu_avg,fixed_omega=fixed_omega)
+        new_ref = new_tree
+        new_tree = read_tree_newick(tree.newick())
+        omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
+        phi_adjusted = [p for p in phi if p > 1e-6]
+        sum_phi = sum(phi_adjusted)
+        phi_adjusted = [p/sum_phi for p in phi_adjusted]
+        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,do_sca=do_sca,var_apprx=var_apprx,mu_avg=None,fixed_omega=fixed_omega) 
+        print("New llh: " + str(llh))
+        print(new_tree.newick()) 
+        if llh > best_llh:
+            best_llh = llh  
+            best_tree = new_tree
+            best_phi = phi
+            best_omega = omega
+        #except:
+        #    print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
 def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,verbose=False,extra_data={},do_sca=True,var_apprx=False,mu_avg=None,fixed_omega=False):
@@ -92,6 +95,7 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
         Q = run_Estep(b,s,omega,tau,phi,var_apprx=var_apprx)
         if verbose:
             print("Mstep ...")   
+        print(sum(o*p for o,p in zip(omega,phi)))
         next_phi,next_tau,next_omega = run_MMstep(b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,fixed_omega=fixed_omega,do_sca=do_sca,var_apprx=var_apprx,mu_avg=mu_avg)
         llh = f_ll(b,s,next_tau,next_omega,next_phi,var_apprx=var_apprx)
         #llh = elbo(tau,phi,omega,Q,b,s)
@@ -465,7 +469,7 @@ def run_Mstep(b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau
     return phi_star, tau_star, omega
 
 def run_MMstep(b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,fixed_omega=False,do_sca=True,var_apprx=False,mu_avg=None):
-    phi_star = compute_phi_star(Q) if not fixed_phi else phi
+    phi_star = compute_phi_star_cvxpy(Q,omega,mu_avg=mu_avg) if not fixed_phi else phi
     tau = compute_tau_star_cvxpy(tau,omega,Q,b_avg,s,M,dt,eps_tau=EPS_tau,var_apprx=var_apprx) if not fixed_tau else tau
     if do_sca:
         omega = compute_omega_star_sca(tau,omega,Q,b_sq,b,s) if not fixed_omega else omega
@@ -475,7 +479,7 @@ def run_MMstep(b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=Fal
             omega_star = compute_omega_star_sca(tau,omega,Q,b_sq,b,s) if not fixed_omega else omega
             tau_star = compute_tau_star_sca(tau,omega_star,Q,b_sq,b,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
         else:
-            omega_star = compute_omega_star_cvxpy(tau,omega,Q,b_avg,var_apprx=var_apprx,mu_avg=mu_avg) if not fixed_omega else omega
+            omega_star = compute_omega_star_cvxpy(tau,omega,Q,b_avg,phi_star,var_apprx=var_apprx,mu_avg=mu_avg) if not fixed_omega else omega
             tau_star = compute_tau_star_cvxpy(tau,omega_star,Q,b_avg,s,M,dt,eps_tau=EPS_tau,var_apprx=var_apprx) if not fixed_tau else tau
         if sqrt(sum([(x-y)**2 for (x,y) in zip(omega,omega_star)])/len(omega)) < 1e-5:
             break
@@ -511,7 +515,7 @@ def f_ll_naive(b,s,tau,omega,phi):
         ll += log(lli)
     return ll
 
-def compute_phi_star(Q):
+def compute_phi_star(Q,eps_phi=1e-7):
     k = len(Q[0])
     phi = [0]*k
     N = 0
@@ -519,22 +523,26 @@ def compute_phi_star(Q):
         if Qi is not None:
             phi = [x+y for (x,y) in zip(phi,Qi)]
             N += 1
-    return [x/N for x in phi]    
+    return [max(x/N,eps_phi) for x in phi]    
 
-def compute_phi_star_cvxpy(Q,gamma=10):
+def compute_phi_star_cvxpy(Q,omega,mu_avg=None,eps_phi=1e-7):
     k = len(Q[0])
     S = [0]*k
     for Qi in Q:
         S = [x+y for (x,y) in zip(S,Qi)]
 
-    var_phi = cp.Variable(k)
+    var_phi = cp.Variable(k,pos=True)
        
-    objective = cp.Maximize(np.array(S).T @ cp.log(var_phi) + gamma*cp.sum(cp.entr(var_phi)) ) 
+    objective = cp.Maximize(np.array(S).T @ cp.log(var_phi))
+    #objective = cp.Maximize(np.array(S).T @ cp.log(var_phi) + gamma*cp.sum(cp.entr(var_phi)) ) 
     #objective = cp.Maximize( cp.sum(cp.entr(var_phi)))
-    constraints = [ (np.zeros(k)+1).T @ var_phi == 1, var_phi >= 0 ]
+    if mu_avg is not None:
+        constraints = [ (np.zeros(k)+1).T @ var_phi == 1, var_phi.T @ omega == mu_avg, np.zeros(k)+eps_phi <= var_phi ]
+    else:
+        constraints = [ (np.zeros(k)+1).T @ var_phi == 1, np.zeros(k)+eps_phi <= var_phi ]
 
     prob = cp.Problem(objective,constraints)
-    f_star = prob.solve(verbose=False)
+    f_star = prob.solve(verbose=False,solver=cp.MOSEK)
     phi_star = var_phi.value
 
     return phi_star
@@ -599,7 +607,7 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,var_apprx=False)
 
     return tau_star
 
-def compute_omega_star_cvxpy(tau,omega,Q,b,eps_omg=0.0001,var_apprx=False,mu_avg=None):
+def compute_omega_star_cvxpy(tau,omega,Q,b,phi,eps_omg=0.0001,var_apprx=False,mu_avg=None):
     N = len(b)
     k = len(omega)
     Pd = np.zeros(k)
@@ -622,7 +630,7 @@ def compute_omega_star_cvxpy(tau,omega,Q,b,eps_omg=0.0001,var_apprx=False,mu_avg
     if mu_avg is None:
         constraints = [np.zeros(k)+eps_omg <= var_omega]
     else:
-        constraints = [np.zeros(k)+eps_omg <= var_omega, var_omega.T @ np.ones(k) == mu_avg*k]
+        constraints = [np.zeros(k)+eps_omg <= var_omega, var_omega.T @ phi == mu_avg]
 
     prob = cp.Problem(objective,constraints)
     f_star = prob.solve(verbose=False,solver=cp.MOSEK)
