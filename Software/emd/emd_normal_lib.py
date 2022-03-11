@@ -16,7 +16,7 @@ from random import seed,uniform, random, randrange
 from simulator.multinomial import *
 
 EPS_tau=1e-3
-EPSILON=1e-4
+EPSILON=5e-4
 INF = float("inf")
 PSEUDO = 1.0
 MIN_b=0
@@ -47,7 +47,7 @@ def EM_date_adapt_bins(tree,smpl_times,init_mu,nbins=130,s=10000,maxIter=100,nre
         k = len(omega)
     return best_tree,best_llh,best_phi,best_omega
 
-def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,k=100,nrep=100,maxIter=100,refTree=None,fixed_phi=False,fixed_tau=False,verbose=False,extra_data={},var_apprx=False,mu_avg=None,fixed_omega=False,randseed=None):
+def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,k=100,nrep=100,maxIter=100,refTree=None,fixed_phi=False,fixed_tau=False,verbose=False,extra_data={},var_apprx=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0):
     best_llh = -float("inf")
     best_tree = None
     best_phi = None
@@ -66,14 +66,14 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
         print("Random seed: " + str(rseeds[r]))
         new_tree = read_tree_newick(tree.newick())
         try:
-            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,var_apprx=var_apprx,mu_avg=mu_avg,fixed_omega=fixed_omega)
+            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,var_apprx=var_apprx,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
             new_ref = new_tree
             new_tree = read_tree_newick(tree.newick())
             omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
             phi_adjusted = [p for p in phi if p > 1e-6]
             sum_phi = sum(phi_adjusted)
             phi_adjusted = [p/sum_phi for p in phi_adjusted]
-            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,var_apprx=var_apprx,mu_avg=None,fixed_omega=fixed_omega) 
+            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,var_apprx=var_apprx,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
             print("New llh: " + str(llh))
             print(new_tree.newick()) 
             if llh > best_llh:
@@ -85,8 +85,8 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
             print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
-def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,verbose=False,extra_data={},var_apprx=False,mu_avg=None,fixed_omega=False):
-    M, dt, b = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile,extra_data=extra_data)
+def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,verbose=False,extra_data={},var_apprx=False,mu_avg=None,fixed_omega=False,pseudo=0):
+    M, dt, b = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile,extra_data=extra_data,pseudo=pseudo)
     b_avg = [sum(b_i)/len(b_i) for b_i in b] 
     b_sq = [sum(x*x for x in b_i)/len(b_i) for b_i in b] 
     tau, phi, omega = init_EM(tree,smpl_times,k=k,input_omega=input_omega,s=s,refTree=refTree,init_rate_distr=init_rate_distr)
@@ -130,13 +130,16 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
 
     return tau,omega,phi,llh
 
-def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
+def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False,place_mu=True):
 # compute and place the divergence time onto the node label of the tree
 # must have at least one sampling time. Assumming the tree branches have been
 # converted to time unit and are consistent with the given sampling_time
+# if place_mu is true, also place the mutation rate of that branch ( assuming
+# each node already has the attribute node.mu
+
     calibrated = []
     for node in tree.traverse_postorder():
-        node.time,node.mutation_rate = None,None
+        node.time = None
         lb = node.get_label()
         if lb in sampling_time:
             node.time = sampling_time[lb]
@@ -175,15 +178,16 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False):
 
     # place the divergence time and mutation rate onto the label
     for node in tree.traverse_postorder():
-        #if node.is_leaf():
-        #    continue
         lb = node.get_label()
         assert node.time is not None, "Failed to compute divergence time for node " + lb
         if as_date:
             divTime = days_to_date(node.time)
         else:
             divTime = str(node.time) if not bw_time else str(-node.time)
-        tag = "[t=" + divTime + ",mu=" + str(node.mu) + "]" if not node.is_root() else "[t=" + divTime + "]"
+        if place_mu and not node.is_root:
+            tag = "[t=" + divTime + ",mu=" + str(node.mu) + "]"
+        else:
+            tag = "[t=" + divTime + "]"
         lb = lb + tag if lb else tag
         node.set_label(lb)
 
@@ -349,7 +353,7 @@ def init_tau_from_refTree(my_tree,refTree,eps_tau=EPS_tau):
 
     return tau        
 
-def setup_constr(tree,smpl_times,s,root_age=None,eps_tau=EPS_tau,trueTreeFile=None,extra_data={}):
+def setup_constr(tree,smpl_times,s,root_age=None,eps_tau=EPS_tau,trueTreeFile=None,extra_data={},pseudo=0):
     n = len(list(tree.traverse_leaves()))
     N = 2*n-2
 
@@ -367,7 +371,7 @@ def setup_constr(tree,smpl_times,s,root_age=None,eps_tau=EPS_tau,trueTreeFile=No
             node.constraint = [0.]*N
             node.constraint[node.idx] = 1
             node.t = smpl_times[node.get_label()]
-            b[node.idx] = [node.edge_length]
+            b[node.idx] = [node.edge_length+pseudo/s]
             name = node.get_label()
             if name in extra_data:
                 b[node.idx] += extra_data[name]
@@ -383,7 +387,7 @@ def setup_constr(tree,smpl_times,s,root_age=None,eps_tau=EPS_tau,trueTreeFile=No
                 node.constraint = children[0].constraint
                 node.constraint[node.idx] = 1
                 node.t = children[0].t
-                b[node.idx] = [node.edge_length]
+                b[node.idx] = [node.edge_length+pseudo/s]
                 name = node.get_label()
                 if name in extra_data:
                     b[node.idx] += extra_data[name]

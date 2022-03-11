@@ -31,6 +31,7 @@ parser.add_argument("-v","--verbose",action='store_true',help="Verbose")
 parser.add_argument("-k","--nbin",required=False,help="The number of bins to discretize the rate distribution. Default: 100")
 parser.add_argument("--maxIter",required=False,help="The maximum number of iterations for EM search. Default: 100")
 parser.add_argument("--extraData",required=False,help="The extra observations per branch. Default: None")
+parser.add_argument("--pseudo",required=False,help="Adding pseudo-count to each branch length (divided by sequence length). Default: 0")
 
 
 args = vars(parser.parse_args())
@@ -72,6 +73,8 @@ with open(timeFile,"r") as fin:
         name,age = line.split()
         smpl_times[name] = float(age)
 
+pseudo = float(args["pseudo"]) if args["pseudo"] else 0
+
 omega = None
 init_rate_distr = None
 if args["clockFile"] is not None:
@@ -102,7 +105,7 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=fixedTau,fixed_omega=fixedOmega,k=k,verbose=args["verbose"],extra_data=extraData,var_apprx=varApprx,mu_avg=muAvg)                 
+best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=fixedTau,fixed_omega=fixedOmega,k=k,verbose=args["verbose"],extra_data=extraData,var_apprx=varApprx,mu_avg=muAvg,pseudo=pseudo)                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):
