@@ -32,6 +32,7 @@ parser.add_argument("-k","--nbin",required=False,help="The number of bins to dis
 parser.add_argument("--maxIter",required=False,help="The maximum number of iterations for EM search. Default: 100")
 parser.add_argument("--extraData",required=False,help="The extra observations per branch. Default: None")
 parser.add_argument("--pseudo",required=False,help="Adding pseudo-count to each branch length (divided by sequence length). Default: 0")
+parser.add_argument("--randSeed",required=False,help="Random seed; either a number or a list of p numbers where p is the number of replicates specified by -p. Default: auto-select")
 
 
 args = vars(parser.parse_args())
@@ -57,7 +58,9 @@ varApprx = args["varApprx"]
 muAvg = float(args["muAvg"]) if args["muAvg"] is not None else None
 
 refTree = read_tree_newick(refTreeFile) if refTreeFile else None
-
+randseed = [int(x) for x in args["randSeed"].strip().split()]
+if len(randseed) == 1:
+    randseed = randseed[0]
 extraData = {}
 if args["extraData"] is not None:
     with open(args["extraData"],'r') as fin:
@@ -105,7 +108,7 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=fixedTau,fixed_omega=fixedOmega,k=k,verbose=args["verbose"],extra_data=extraData,var_apprx=varApprx,mu_avg=muAvg,pseudo=pseudo)                 
+best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_phi=fixedPhi,fixed_tau=fixedTau,fixed_omega=fixedOmega,k=k,verbose=args["verbose"],extra_data=extraData,var_apprx=varApprx,mu_avg=muAvg,pseudo=pseudo,randseed=randseed)                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):
