@@ -14,6 +14,7 @@ from scipy.sparse import csr_matrix
 import cvxpy as cp
 from random import seed,uniform, random, randrange
 from simulator.multinomial import *
+import time
 
 EPS_tau=1e-3
 EPSILON=5e-4
@@ -65,24 +66,24 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
         print("Solving EM with init point + " + str(r+1))
         print("Random seed: " + str(rseeds[r]))
         new_tree = read_tree_newick(tree.newick())
-        try:
-            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,var_apprx=var_apprx,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
-            new_ref = new_tree
-            new_tree = read_tree_newick(tree.newick())
-            omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
-            phi_adjusted = [p for p in phi if p > 1e-6]
-            sum_phi = sum(phi_adjusted)
-            phi_adjusted = [p/sum_phi for p in phi_adjusted]
-            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,var_apprx=var_apprx,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
-            print("New llh: " + str(llh))
-            print(new_tree.newick()) 
-            if llh > best_llh:
-                best_llh = llh  
-                best_tree = new_tree
-                best_phi = phi
-                best_omega = omega
-        except:
-            print("Failed to optimize using this init point!")        
+        #try:
+        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,var_apprx=var_apprx,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
+        new_ref = new_tree
+        new_tree = read_tree_newick(tree.newick())
+        omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
+        phi_adjusted = [p for p in phi if p > 1e-6]
+        sum_phi = sum(phi_adjusted)
+        phi_adjusted = [p/sum_phi for p in phi_adjusted]
+        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,fixed_phi=fixed_phi,fixed_tau=fixed_tau,verbose=verbose,extra_data=extra_data,var_apprx=var_apprx,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
+        print("New llh: " + str(llh))
+        print(new_tree.newick()) 
+        if llh > best_llh:
+            best_llh = llh  
+            best_tree = new_tree
+            best_phi = phi
+            best_omega = omega
+        #except:
+        #    print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
 def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,init_rate_distr=None,verbose=False,extra_data={},var_apprx=False,mu_avg=None,fixed_omega=False,pseudo=0):
@@ -103,7 +104,7 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
         if verbose:
             print("Mstep ...")   
         print(sum(o*p for o,p in zip(omega,phi)))
-        next_phi,next_tau,next_omega = run_MMstep(b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,fixed_omega=fixed_omega,var_apprx=var_apprx,mu_avg=mu_avg)
+        next_phi,next_tau,next_omega = run_MMstep(tree,smpl_times,b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,fixed_omega=fixed_omega,var_apprx=var_apprx,mu_avg=mu_avg)
         llh = f_ll(b,s,next_tau,next_omega,next_phi,var_apprx=var_apprx)
         if verbose:
             print("Current llh: " + str(llh))
@@ -465,19 +466,18 @@ def run_Estep_naive(b,s,omega,tau,phi,p_eps=EPS_tau):
     return Q
 
 def run_Mstep(b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False):
-    #phi_star = compute_phi_star(Q) if not fixed_phi else phi
     phi_star = compute_phi_star_cvxpy(Q) if not fixed_phi else phi
     tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
-    #tau_star = compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
     
     return phi_star, tau_star, omega
 
-def run_MMstep(b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,fixed_omega=False,var_apprx=False,mu_avg=None):
+def run_MMstep(tree,smplTimes,b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=False,fixed_tau=False,fixed_omega=False,var_apprx=False,mu_avg=None):
     phi_star = compute_phi_star_cvxpy(Q,omega,mu_avg=mu_avg) if not fixed_phi else phi
-    #tau = compute_tau_star_cvxpy(tau,omega,Q,b_avg,s,M,dt,eps_tau=EPS_tau,var_apprx=var_apprx) if not fixed_tau else tau
     for i in range(100):
-        tau_star = compute_tau_star_cvxpy(tau,omega,Q,b_avg,s,M,dt,eps_tau=EPS_tau,var_apprx=var_apprx) if not fixed_tau else tau
-        omega_star = compute_omega_star_cvxpy(tau_star,omega,Q,b_avg,phi_star,var_apprx=var_apprx,mu_avg=mu_avg) if not fixed_omega else omega
+        #tau_star = compute_tau_star_cvxpy(tau,omega,Q,b_avg,s,M,dt,eps_tau=EPS_tau,var_apprx=var_apprx) if not fixed_tau else tau
+        tau_star = compute_tau_star(tree,smplTimes,omega,Q,b_avg,b,s,M,dt,eps_tau=EPS_tau,maxIter=5000) 
+        #omega_star = compute_omega_star_cvxpy(tau_star,omega,Q,b_avg,phi_star,var_apprx=var_apprx,mu_avg=mu_avg) if not fixed_omega else omega
+        omega_star = compute_omega_star(tau_star,Q,b_avg,phi_star,mu_avg=mu_avg)
         if sqrt(sum([(x-y)**2 for (x,y) in zip(omega,omega_star)])/len(omega)) < 1e-5:
             break
         if sqrt(sum([(x-y)**2 for (x,y) in zip(tau,tau_star)])/len(tau)) < 1e-5:
@@ -544,34 +544,6 @@ def compute_phi_star_cvxpy(Q,omega,mu_avg=None,eps_phi=1e-7):
 
     return phi_star
 
-def compute_tau_star_scipy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau):
-    N = len(b)
-    k = len(omega)
-    
-    def f(x,*args):
-    # objective function
-        Q,omega,b = args
-        return sum(Q[i][j]*s/omega[j]/x[i]*(b[i]-omega[j]*x[i])**2 + Q[i][j]*log(omega[j]*x[i]) for i in range(N) for j in range(k))
-    
-    def g(x,*args):
-    # Jacobian
-        Q,omega,b = args
-        return np.array([sum(q_i[j]*s*(omega[j]-b_i**2/omega[j]/tau_i**2) + q_i[j]/tau_i for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
-    
-    def h(x,*args):
-    # Hessian
-        Q,omega,b = args
-        return diags([sum(2*q_i[j]*s*b_i**2/omega[j]/tau_i**3 - q_i[j]/tau_i**2 for j in range(k)) for (q_i,tau_i,b_i) in zip(Q,x,b)])
-    
-    linear_constraint = LinearConstraint(csr_matrix(M),dt,dt,keep_feasible=False)
-    bounds = Bounds(np.zeros(N)+eps_tau,np.zeros(N)+1e5,keep_feasible=False)
-    args = (Q,omega,b)
-
-    result = minimize(fun=f,method="trust-constr",x0=tau,args=args,bounds=bounds,constraints=[linear_constraint],options={'disp':True,'verbose':1},jac=g,hess=h)
-    tau_star = result.x
-
-    return tau_star
-
 def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,var_apprx=False):
     N = len(b)
     k = len(omega)
@@ -634,12 +606,227 @@ def compute_omega_star_cvxpy(tau,omega,Q,b,phi,eps_omg=0.0001,var_apprx=False,mu
 
     return omega_star
 
-def compute_f_MM(tau,omega,Q,b,s):
+def compute_tau_star(tree,smplTimes,omega,Q,b,B,s,M,dt,eps_tau=EPS_tau,maxIter=5000):
+# IMPORTANT: only works with var_apprx. Never use this function
+# when var_apprx if False
+# A: the current active set
+    N = len(b)
+    k = len(omega)
+    alpha = [sum(2*Q[i][j]*omega[j]*omega[j]/b[i] for j in range(k)) for i in range(N)]
+    beta = [-sum(2*Q[i][j]*omega[j] for j in range(k)) for i in range(N)]
+    
+    def __changeVar__(param_yx,param_xt):
+        a1,b1 = param_yx # equation: y = a1*x + b1
+        a2,b2 = param_xt # equation: x = a2*t + b2
+        # compute y by t: y = a1*(a2*t+b2)+b1 = a1*a2*t + a1*b2+b1
+        return (a1*a2,a1*b2+b1)
+
+    def __sumParam__(params):
+    # params is a list of 2-entry tuples
+        return (sum(p[0] for p in params),sum(p[1] for p in params))
+
+    def __compute__(param_yx,x):
+        a,b = param_yx
+        return a*x+b    
+    
+    def __solve__(param_yx,y=0):
+        a,b = param_yx
+        return (y-b)/a
+
+    def __solve_Lagrange__(A):
+        lambdaMap = {}
+        for u in tree.traverse_postorder():
+            if u.is_leaf():
+                u.ld = u.label
+                u.sld = (1,0) # sld: sum of all lambdas below this node
+                u.t = smplTimes[u.label]
+                u.as_leaf = True
+            else:
+                u.as_leaf = False
+                v1 = None
+                for v in u.children:
+                    if v.as_leaf and v.idx in A:
+                        v1 = v
+                if v1 is None:        
+                    v1 = u.children[0]
+                else:
+                    u.as_leaf = True    
+                u.ld = v1.ld
+                u.t = v1.t
+                g1,e1 = v1.path
+                u.sld = (0,0)
+                for v2 in u.children:
+                    if v2 is v1:
+                        g,e = (1,0)
+                    else:    
+                        g2,e2 = v2.path
+                        g = g1/g2
+                        e = (e1-e2+v2.t-v1.t)/g2 
+                    if v1.ld not in lambdaMap:
+                        lambdaMap[v1.ld] = {v2.ld:(g,e)}
+                    else:
+                        lambdaMap[v1.ld][v2.ld] = (g,e)
+                    u.sld = __sumParam__([u.sld,__changeVar__(v2.sld,(g,e))])
+            if not u.is_root():
+                if u.idx in A:
+                    u.tau = (0,eps_tau) # i.e. tau = eps_tau
+                    u.nu = __changeVar__((-1/alpha[u.idx],beta[u.idx]/alpha[u.idx]+eps_tau),u.sld)
+                else:
+                    u.tau = __changeVar__((1/alpha[u.idx],-beta[u.idx]/alpha[u.idx]),u.sld)
+                    u.nu = None
+                u.path = u.tau if u.is_leaf() else __sumParam__([v1.path,u.tau])
+        
+        ld0 = tree.root.ld
+        if ld0 not in lambdaMap:
+            lambdaMap[ld0] = {ld0:(1,0)} # should never happens (unless the tree has unifurcation at the root?)
+        else:    
+            lambdaMap[ld0][ld0] = (1,0)                            
+        for u in tree.traverse_preorder():
+            if u.is_leaf():
+                continue
+            ld1 = u.ld
+            for v in u.children:
+                ld2 = v.ld
+                lambdaMap[ld0][ld2] = __changeVar__(lambdaMap[ld1][ld2],lambdaMap[ld0][ld1])            
+        ld0_value = -sum(lambdaMap[ld0][ld1][1] for ld1 in lambdaMap[ld0])/sum(lambdaMap[ld0][ld1][0] for ld1 in lambdaMap[ld0])
+        lambdaValues = {ld:__compute__(lambdaMap[ld0][ld],ld0_value) for ld in lambdaMap[ld0]}
+        tau = [eps_tau]*N
+        nu = {}
+        for u in tree.traverse_postorder():
+            if not u.is_root():
+                ldVal = lambdaValues[u.ld]
+                if u.idx in A:
+                    nu[u.idx] = __compute__(u.nu,ldVal)
+                else:
+                    tau[u.idx] = __compute__(u.tau,ldVal)
+        return tau,nu        
+
+    def __violated_set__(tau):
+        return [i for i in range(N) if tau[i]-eps_tau < -1e-8]
+         
+    def __make_feasible__(tau):         
+        A = set() # active set  
+        for u in tree.traverse_postorder():
+            if u.is_leaf():
+                u.as_leaf = True
+                u.t = smplTimes[u.label]
+            else:                    
+                min_t = float("inf")                    
+                for v in u.children:
+                    if tau[v.idx] < eps_tau:
+                        tau[v.idx] = eps_tau
+                    min_t = min(min_t,v.t-tau[v.idx])
+                u.t = min_t
+                u.as_leaf = False
+                minChild = None # the closest child as leaf having tau == eps_tau
+                min_t = float("inf")
+                for v in u.children:
+                    tau[v.idx] = v.t-u.t
+                    if abs(tau[v.idx]-eps_tau) < 1e-10:
+                        if v.as_leaf:
+                            if v.t < min_t:
+                                min_t = v.t
+                                minChild = v 
+                        else:
+                            A.add(v.idx)    
+                if minChild is not None:
+                    A.add(minChild.idx)
+                    u.as_leaf = True
+        return tau,A
+    
+    A = set()
+    tau = None
+    for r in range(40):
+        tau_star,nu = __solve_Lagrange__(A)
+        V = __violated_set__(tau_star) 
+        if len(V) == 0:
+            #print("No violation")
+            tau = tau_star
+            min_nu = float("inf")
+            min_idx = None
+            for i in nu:
+                if nu[i] < min_nu:
+                    min_nu = nu[i]
+                    min_idx = i
+            if min_nu >= 0:
+                return tau       
+            else:
+                A.remove(min_idx)     
+        elif tau is None:
+            tau,A = __make_feasible__(tau_star)                                
+        else:
+            #print("Found violation")
+            flag = False
+            for i in V:
+                if abs(tau[i]-eps_tau) < 1e-10:
+                    print(i,tau[i],tau_star[i])
+                    A.add(i)
+                    flag = True 
+            if not flag:
+                delta = 0
+                minD = float("inf")
+                minIdx = None
+                for i in V:
+                    if abs(tau[i]-eps_tau) < 1e-10:
+                        continue
+                    delta = (tau_star[i]-eps_tau)/(tau[i]-eps_tau)
+                    if delta < minD:
+                        minD = delta
+                        minIdx = i
+                a = 1/(1-minD)
+                A.add(minIdx)
+                tau = [t+a*(ts-t) for t,ts in zip(tau,tau_star)]       
+    return tau            
+
+def compute_omega_star(tau,Q,b,phi,eps_omg=0.0001,mu_avg=None):
+# IMPORTANT: only works with var_apprx. Never call this function
+# when var_apprx if False
+    N = len(tau)
+    k = len(Q[0])
+    a = [2*sum(Q[i][j]*tau[i] for i in range(N)) for j in range(k)]
+    c = [2*sum(Q[i][j]*tau[i]*tau[i]/b[i] for i in range(N)) for j in range(k)]
+    A = set({})
+    B = {j for j in range(k)}
+
+    while 1:
+        omega = [eps_omg]*k
+        if mu_avg is None:
+            ld0 = 0
+        else:
+            u = mu_avg # numerator
+            v = 0 # denominator
+            for j in B:
+                u -= a[j]/c[j]*phi[j]
+                v += phi[j]*phi[j]/c[j]
+            for j in A:
+                u -= eps_omg*phi[j]
+            ld0 = u/v
+        for j in A:
+            ld = eps_omg*c[j]-ld0*phi[j]-a[j]
+            if ld < 0:            
+                A.remove(j)
+                B.add(j)
+        for j in B:
+            omega[j] = a[j]/c[j]+ld0*phi[j]/c[j]
+            if omega[j] < eps_omg:
+                A.add(j)
+                B.remove(j)         
+        if len(A) < 1:
+            break
+    return omega                    
+
+def compute_f_MM(tau,omega,Q,b,s,var_apprx=True):
     N = len(tau)
     k = len(omega)
     m = len(b[0])
-
-    return sum(s*Q[i][j]*(b[i][l]-omega[j]*tau[i])**2/omega[j]/tau[i] + Q[i][j]*log(omega[j]*tau[i]) for i in range(N) for j in range(k) for l in range(m))
+    F = 0
+    for i in range(N):
+        for j in range(k):
+            w_ij = sum(b[i])/len(b[i]) if var_apprx else omega[j]*tau[i]
+            for l in range(m):
+                F += s*Q[i][j]*(b[i][l]-omega[j]*tau[i])**2/w_ij + Q[i][j]*log(w_ij)       
+    #return sum(s*Q[i][j]*(b[i][l]-omega[j]*tau[i])**2/omega[j]/tau[i] + Q[i][j]*log(omega[j]*tau[i]) for i in range(N) for j in range(k) for l in range(m))
+    return F
 
 def compute_tau_star_sca(tau,omega,Q,b_sq,b,s,M,dt,eps_tau=EPS_tau):
     N = len(b_sq)
