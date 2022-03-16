@@ -185,7 +185,7 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False,place
             divTime = days_to_date(node.time)
         else:
             divTime = str(node.time) if not bw_time else str(-node.time)
-        if place_mu and not node.is_root:
+        if place_mu and not node.is_root():
             tag = "[t=" + divTime + ",mu=" + str(node.mu) + "]"
         else:
             tag = "[t=" + divTime + "]"
