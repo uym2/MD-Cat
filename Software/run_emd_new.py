@@ -59,7 +59,7 @@ muAvg = float(args["muAvg"]) if args["muAvg"] is not None else None
 
 refTree = read_tree_newick(refTreeFile) if refTreeFile else None
 randseed = [int(x) for x in args["randSeed"].strip().split()]
-if len(randseed) == 1:
+if len(randseed) == 1 and nreps != 1:
     randseed = randseed[0]
 extraData = {}
 if args["extraData"] is not None:

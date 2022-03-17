@@ -748,7 +748,6 @@ def compute_tau_star(tree,smplTimes,omega,Q,b,B,s,M,dt,eps_tau=EPS_tau,maxIter=5
         tau_star,nu = __solve_Lagrange__(A)
         V = __violated_set__(tau_star) 
         if len(V) == 0:
-            #print("No violation")
             tau = tau_star
             min_nu = float("inf")
             min_idx = None
@@ -763,11 +762,9 @@ def compute_tau_star(tree,smplTimes,omega,Q,b,B,s,M,dt,eps_tau=EPS_tau,maxIter=5
         elif tau is None:
             tau,A = __make_feasible__(tau_star)                                
         else:
-            #print("Found violation")
             flag = False
             for i in V:
                 if abs(tau[i]-eps_tau) < 1e-10:
-                    print(i,tau[i],tau_star[i])
                     A.add(i)
                     flag = True 
             if not flag:
@@ -775,8 +772,8 @@ def compute_tau_star(tree,smplTimes,omega,Q,b,B,s,M,dt,eps_tau=EPS_tau,maxIter=5
                 minD = float("inf")
                 minIdx = None
                 for i in V:
-                    if abs(tau[i]-eps_tau) < 1e-10:
-                        continue
+                    #if abs(tau[i]-eps_tau) < 1e-10:
+                    #    continue
                     delta = (tau_star[i]-eps_tau)/(tau[i]-eps_tau)
                     if delta < minD:
                         minD = delta
@@ -786,41 +783,74 @@ def compute_tau_star(tree,smplTimes,omega,Q,b,B,s,M,dt,eps_tau=EPS_tau,maxIter=5
                 tau = [t+a*(ts-t) for t,ts in zip(tau,tau_star)]       
     return tau            
 
-def compute_omega_star(tau,Q,b,phi,eps_omg=0.0001,mu_avg=None):
+def compute_omega_star(tau,Q,b,phi,eps_omg=0.0001,mu_avg=None,maxIter=100):
 # IMPORTANT: only works with var_apprx. Never call this function
 # when var_apprx if False
     N = len(tau)
     k = len(Q[0])
     a = [2*sum(Q[i][j]*tau[i] for i in range(N)) for j in range(k)]
     c = [2*sum(Q[i][j]*tau[i]*tau[i]/b[i] for i in range(N)) for j in range(k)]
-    A = set({})
-    B = {j for j in range(k)}
-
-    while 1:
-        omega = [eps_omg]*k
+    
+    def __solve_Lagrange__(A):
+        omega_star = [eps_omg]*k
+        lambda_star = {}
         if mu_avg is None:
             ld0 = 0
         else:
             u = mu_avg # numerator
             v = 0 # denominator
-            for j in B:
-                u -= a[j]/c[j]*phi[j]
-                v += phi[j]*phi[j]/c[j]
-            for j in A:
-                u -= eps_omg*phi[j]
+            for j in range(k):
+                if j in A:
+                    u -= eps_omg*phi[j]
+                else:
+                    u -= a[j]/c[j]*phi[j]
+                    v += phi[j]*phi[j]/c[j]
             ld0 = u/v
-        for j in A:
-            ld = eps_omg*c[j]-ld0*phi[j]-a[j]
-            if ld < 0:            
-                A.remove(j)
-                B.add(j)
-        for j in B:
-            omega[j] = a[j]/c[j]+ld0*phi[j]/c[j]
-            if omega[j] < eps_omg:
-                A.add(j)
-                B.remove(j)         
-        if len(A) < 1:
-            break
+        for j in range(k):
+            if j in A:
+                lambda_star[j] = eps_omg*c[j]-ld0*phi[j]-a[j]
+            else: 
+                omega_star[j] = a[j]/c[j]+ld0*phi[j]/c[j]
+        return omega_star,lambda_star
+
+    A = set({})
+    omega = [mu_avg]*k if mu_avg is not None else None # feasible omega
+    for i in range(maxIter):
+        print("Solving omega iter " + str(i+1))
+        omega_star,lambda_star = __solve_Lagrange__(A)
+        V = [j for j in range(k) if omega_star[j] < eps_omg]
+        if len(V) == 0: # omega_star is feasible
+            min_ld = float("inf")
+            min_idx = None
+            for j in lambda_star:
+                if lambda_star[j] < min_ld:
+                    min_ld = lambda_star[j]
+                    min_idx = j
+            if min_ld >= 0:
+                return omega_star # feasible and optimal
+            else:
+                A.remove(min_idx) # remove one constraint in the active set
+        elif omega is None:
+            omega = [max(omg,eps_omg) for omg in omega_star] # feasible omega
+            A = V
+        else:    
+            flag = False
+            for i in V:
+                if abs(omega[i]-eps_omg) < 1e-10:
+                    A.add(i)
+                    flag = True 
+            if not flag:
+                delta = 0
+                minD = float("inf")
+                minIdx = None
+                for i in V:
+                    delta = (omega_star[i]-eps_omg)/(omega[i]-eps_omg)
+                    if delta < minD:
+                        minD = delta
+                        minIdx = i
+                alpha = 1/(1-minD)
+                A.add(minIdx)
+                omega = [m+alpha*(ms-m) for m,ms in zip(omega,omega_star)] # feasible omega       
     return omega                    
 
 def compute_f_MM(tau,omega,Q,b,s,var_apprx=True):
