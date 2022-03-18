@@ -109,7 +109,6 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
         Q = run_Estep(b,s,omega,tau,phi,var_apprx=var_apprx)
         if verbose:
             print("Mstep ...")   
-        #print(sum(o*p for o,p in zip(omega,phi)))
         next_phi,next_tau,next_omega = run_MMstep(tree,smpl_times,b,b_avg,b_sq,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=fixed_phi,fixed_tau=fixed_tau,fixed_omega=fixed_omega,var_apprx=var_apprx,mu_avg=mu_avg)
         llh = f_ll(b,s,next_tau,next_omega,next_phi,var_apprx=var_apprx)
         if verbose:
@@ -252,7 +251,6 @@ def discretize(mu,k,Min=0.0005,Max=0.02):
             diff = d
             best_idx = i        
     
-    print(mu,omega[best_idx])
     density[best_idx] = 99.0/100
 
     phi = density/sum(density)
@@ -333,16 +331,6 @@ def run_lsd(tree,sampling_time,s=1000,eps_tau=EPS_tau):
     # getting tau
     #tau = init_tau_from_refTree(BS,bits2idx,result_tree_file,eps_tau=eps_tau)
     tau = init_tau_from_refTree(tree,result_tree_file,eps_tau=eps_tau)
-    '''tree = read_tree_newick(result_tree_file)
-    bitset_index(tree,BS)
-    n = len(list(tree.traverse_leaves()))
-    N = 2*n-2
-    tau = np.zeros(N)
-    
-    for node in tree.traverse_postorder():
-        if not node.is_root():
-            tau[bits2idx[node.bits]] = max(node.edge_length,eps_tau) '''
-    
     return mu,tau
 
 def init_tau_from_refTree(my_tree,refTree,eps_tau=EPS_tau):
@@ -422,7 +410,6 @@ def log_sum_exp(numlist):
         minx = min([x for x in numlist if x-maxx > MIN_ll])
     except:
         return log(len(numlist)) + MIN_ll
-    #print(min(numlist),max(numlist)) #,exp(max(numlist)-min(numlist)))
     s = sum(exp(x-minx) for x in numlist if x-maxx > MIN_ll)
     result = minx + log(s)  if s > 0 else log(len(numlist)) + MIN_ll
     return result
@@ -539,8 +526,6 @@ def compute_phi_star_cvxpy(Q,omega,mu_avg=None,eps_phi=1e-7):
     var_phi = cp.Variable(k,pos=True)
        
     objective = cp.Maximize(np.array(S).T @ cp.log(var_phi))
-    #objective = cp.Maximize(np.array(S).T @ cp.log(var_phi) + gamma*cp.sum(cp.entr(var_phi)) ) 
-    #objective = cp.Maximize( cp.sum(cp.entr(var_phi)))
     if mu_avg is not None:
         constraints = [ (np.zeros(k)+1).T @ var_phi == 1, var_phi.T @ omega == mu_avg, np.zeros(k)+eps_phi <= var_phi ]
     else:
@@ -563,11 +548,9 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,var_apprx=False)
             continue
         for j in range(k):
             if not var_apprx:
-                #w_ij = tau[i]
                 w_ij = omega[j]*tau[i] # weight by the variance multiplied with s; use previous tau to estimate
             else:
                 w_ij = b[i]    
-            #for x in b[i]:
             Pd[i] += Q[i][j]*omega[j]**2/w_ij
             q[i] -= 2*b[i]*Q[i][j]*omega[j]/w_ij
           
@@ -614,7 +597,7 @@ def compute_omega_star_cvxpy(tau,omega,Q,b,phi,eps_omg=0.0001,var_apprx=False,mu
 
     return omega_star
 
-def compute_tau_star(tree,smplTimes,omega,Q,b,B,s,M,dt,eps_tau=EPS_tau,maxIter=5000):
+def compute_tau_star(tree,smplTimes,omega,Q,b,B,s,M,dt,eps_tau=EPS_tau,maxIter=1000):
 # IMPORTANT: only works with var_apprx. Never use this function
 # when var_apprx if False
 # A: the current active set
@@ -710,7 +693,7 @@ def compute_tau_star(tree,smplTimes,omega,Q,b,B,s,M,dt,eps_tau=EPS_tau,maxIter=5
         return tau,nu        
 
     def __violated_set__(tau):
-        return [i for i in range(N) if tau[i]-eps_tau < -1e-8]
+        return [i for i in range(N) if tau[i]-eps_tau < -1e-10]
          
     def __make_feasible__(tau):         
         A = set() # active set  
@@ -744,7 +727,7 @@ def compute_tau_star(tree,smplTimes,omega,Q,b,B,s,M,dt,eps_tau=EPS_tau,maxIter=5
     
     A = set()
     tau = None
-    for r in range(40):
+    for r in range(maxIter):
         tau_star,nu = __solve_Lagrange__(A)
         V = __violated_set__(tau_star) 
         if len(V) == 0:
@@ -783,18 +766,23 @@ def compute_tau_star(tree,smplTimes,omega,Q,b,B,s,M,dt,eps_tau=EPS_tau,maxIter=5
                 tau = [t+a*(ts-t) for t,ts in zip(tau,tau_star)]       
     return tau            
 
-def compute_omega_star(tau,Q,b,phi,eps_omg=0.0001,mu_avg=None,maxIter=100):
+def compute_omega_star(tau,Q,b,phi,eps_omg=0.0001,mu_avg=None,maxIter=1000):
 # IMPORTANT: only works with var_apprx. Never call this function
 # when var_apprx if False
     N = len(tau)
     k = len(Q[0])
     a = [2*sum(Q[i][j]*tau[i] for i in range(N)) for j in range(k)]
     c = [2*sum(Q[i][j]*tau[i]*tau[i]/b[i] for i in range(N)) for j in range(k)]
-    
+    #omega  in C0 has zero weight in the obj function and cannot be optimzed.
+    #however, they must satisfy the constraints
+    C0 = {j for j in range(k) if c[j] == 0} 
+    k0 = len(C0)
+    C1 = set(range(k))-C0
+
     def __solve_Lagrange__(A):
         omega_star = [eps_omg]*k
         lambda_star = {}
-        if mu_avg is None:
+        if mu_avg is None or k0>0:
             ld0 = 0
         else:
             u = mu_avg # numerator
@@ -809,17 +797,25 @@ def compute_omega_star(tau,Q,b,phi,eps_omg=0.0001,mu_avg=None,maxIter=100):
         for j in range(k):
             if j in A:
                 lambda_star[j] = eps_omg*c[j]-ld0*phi[j]-a[j]
-            else: 
+            elif j in C1: 
                 omega_star[j] = a[j]/c[j]+ld0*phi[j]/c[j]
+        # set a value for all omega_j with c_j = 0 so that they all satisfy the constraints
+        if k0 > 0:
+            if mu_avg is None:
+                mu0 = sum(omega_star[j] for j in C1)/(k-k0)
+            else:
+                mu0 = mu_avg*k - sum(omega_star[j] for j in C1 | A)
+            for j in C0 - A: 
+                omega_star[j] = mu0
         return omega_star,lambda_star
 
     A = set({})
     omega = [mu_avg]*k if mu_avg is not None else None # feasible omega
-    for i in range(maxIter):
-        print("Solving omega iter " + str(i+1))
+    for r in range(maxIter):
         omega_star,lambda_star = __solve_Lagrange__(A)
         V = [j for j in range(k) if omega_star[j] < eps_omg]
         if len(V) == 0: # omega_star is feasible
+            omega = omega_star
             min_ld = float("inf")
             min_idx = None
             for j in lambda_star:
@@ -827,7 +823,7 @@ def compute_omega_star(tau,Q,b,phi,eps_omg=0.0001,mu_avg=None,maxIter=100):
                     min_ld = lambda_star[j]
                     min_idx = j
             if min_ld >= 0:
-                return omega_star # feasible and optimal
+                return omega # feasible and optimal
             else:
                 A.remove(min_idx) # remove one constraint in the active set
         elif omega is None:
