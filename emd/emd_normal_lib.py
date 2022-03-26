@@ -49,24 +49,24 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
         print("Solving EM with init point + " + str(r+1))
         print("Random seed: " + str(rseeds[r]))
         new_tree = read_tree_newick(tree.newick())
-        #try:
-        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
-        new_ref = new_tree
-        new_tree = read_tree_newick(tree.newick())
-        omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
-        phi_adjusted = [p for p in phi if p > 1e-6]
-        sum_phi = sum(phi_adjusted)
-        phi_adjusted = [p/sum_phi for p in phi_adjusted]
-        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
-        print("New llh: " + str(llh))
-        print(new_tree.newick()) 
-        if llh > best_llh:
-            best_llh = llh  
-            best_tree = new_tree
-            best_phi = phi
-            best_omega = omega
-        #except:
-        #    print("Failed to optimize using this init point!")        
+        try:
+            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
+            new_ref = new_tree
+            new_tree = read_tree_newick(tree.newick())
+            omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
+            phi_adjusted = [p for p in phi if p > 1e-6]
+            sum_phi = sum(phi_adjusted)
+            phi_adjusted = [p/sum_phi for p in phi_adjusted]
+            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
+            print("New llh: " + str(llh))
+            print(new_tree.newick()) 
+            if llh > best_llh:
+                best_llh = llh  
+                best_tree = new_tree
+                best_phi = phi
+                best_omega = omega
+        except:
+            print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
 def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,input_omega=None,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,init_rate_distr=None,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0):
