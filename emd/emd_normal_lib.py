@@ -23,6 +23,7 @@ PSEUDO = 1.0
 MIN_b=0
 MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 MIN_q = 1e-5
+nDIGITS = 4 # round up outputs to 5 digits
 
 def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,nrep=100,maxIter=100,refTree=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0):
     best_llh = -float("inf")
@@ -102,10 +103,10 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
     # convert branch length to time unit and compute mu for each branch
     for node in tree.traverse_postorder():
         if not node.is_root():
-            node.set_edge_length(tau[node.idx])
-            node.mu = sum(o*p for (o,p) in zip(omega,Q[node.idx]))
-        #else:
-        #    node.mu = sum(o*p for (o,p) in zip(omega,phi))
+            node.set_edge_length(round(tau[node.idx],nDIGITS))
+            node.mu = round(sum(o*p for (o,p) in zip(omega,Q[node.idx])),nDIGITS)
+        else:
+            node.mu = round(sum(o*p for (o,p) in zip(omega,phi)),nDIGITS)
 
     # compute divergence times
     compute_divergence_time(tree,smpl_times)
@@ -165,8 +166,8 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False,place
         if as_date:
             divTime = days_to_date(node.time)
         else:
-            divTime = str(node.time) if not bw_time else str(-node.time)
-        if place_mu and not node.is_root():
+            divTime = str(round(node.time,nDIGITS)) if not bw_time else str(-round(node.time,nDIGITS))
+        if place_mu:
             tag = "[t=" + divTime + ",mu=" + str(node.mu) + "]"
         else:
             tag = "[t=" + divTime + "]"
