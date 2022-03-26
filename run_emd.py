@@ -25,7 +25,6 @@ parser.add_argument("--bins",required=False,help="Specify the bins for the rate 
 parser.add_argument("--fixedTau",action='store_true',help="Fix the time tree.")
 parser.add_argument("--fixedOmega",action='store_true',help="Fix the rate categories.")
 parser.add_argument("-v","--verbose",action='store_true',help="Verbose")
-parser.add_argument("-k","--nbin",required=False,help="The number of bins to discretize the rate distribution. Default: 100")
 parser.add_argument("--maxIter",required=False,help="The maximum number of iterations for EM search. Default: 100")
 parser.add_argument("--pseudo",required=False,help="Adding pseudo-count to each branch length (divided by sequence length). Default: 0")
 parser.add_argument("--randSeed",required=False,help="Random seed; either a number or a list of p numbers where p is the number of replicates specified by -p. Default: auto-select")
@@ -43,7 +42,6 @@ nreps = int(args["rep"]) if args["rep"] else 100
 
 timeFile = args["samplingTime"]
 seqLen = int(args["seqLen"]) if args["seqLen"] else 1000
-k = int(args["nbin"]) if args["nbin"] else 100
 refTreeFile = args["refTreeFile"]
 smpl_times = {}
 maxIter = int(args["maxIter"]) if args["maxIter"] else 100
@@ -78,6 +76,12 @@ if args["clockFile"] is not None:
     init_rate_distr = multinomial(omega,phi)
 elif args["bins"] is not None:        
     omega = [float(o) for o in args["bins"].split()]
+    k = len(omega)
+    phi = [1/k]*k
+    init_rate_distr = multinomial(omega,phi)
+else:
+    print("ERROR: neither --clockFile or --bins is specified. Please specify one of those two options. Exit now!")
+    exit()
 
 tree = read_tree_newick(intreeFile)
 if args["assignLabel"]:
@@ -87,7 +91,7 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_tau=fixedTau,fixed_omega=fixedOmega,k=k,verbose=args["verbose"],mu_avg=muAvg,pseudo=pseudo,randseed=randseed)                 
+best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_tau=fixedTau,fixed_omega=fixedOmega,verbose=args["verbose"],mu_avg=muAvg,pseudo=pseudo,randseed=randseed)                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):

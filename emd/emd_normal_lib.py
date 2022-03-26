@@ -24,7 +24,7 @@ MIN_b=0
 MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 MIN_q = 1e-5
 
-def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,k=100,nrep=100,maxIter=100,refTree=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0):
+def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=1000,nrep=100,maxIter=100,refTree=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0):
     best_llh = -float("inf")
     best_tree = None
     best_phi = None
@@ -68,11 +68,11 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
         #    print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
-def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,k=100,input_omega=None,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,init_rate_distr=None,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0):
+def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,input_omega=None,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,init_rate_distr=None,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0):
     M, dt, b = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile,pseudo=pseudo)
     #b_avg = [sum(b_i)/len(b_i) for b_i in b] 
     #b_sq = [sum(x*x for x in b_i)/len(b_i) for b_i in b] 
-    tau, phi, omega = init_EM(tree,smpl_times,k=k,input_omega=input_omega,s=s,refTree=refTree,init_rate_distr=init_rate_distr)
+    tau, phi, omega = init_EM(tree,smpl_times,input_omega=input_omega,s=s,refTree=refTree,init_rate_distr=init_rate_distr)
     if verbose:
         print("Initialized EM")
     pre_llh = f_ll(b,s,tau,omega,phi,var_apprx=True)
@@ -173,7 +173,7 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False,place
         lb = lb + tag if lb else tag
         node.set_label(lb)
 
-def init_EM(tree,sampling_time,k=100,s=1000,input_omega=None,refTree=None,eps_tau=EPS_tau,init_rate_distr=None):
+def init_EM(tree,sampling_time,s=1000,input_omega=None,refTree=None,eps_tau=EPS_tau,init_rate_distr=None):
     if init_rate_distr:
         omega = init_rate_distr.omega
         phi = init_rate_distr.phi
@@ -191,9 +191,6 @@ def init_EM(tree,sampling_time,k=100,s=1000,input_omega=None,refTree=None,eps_ta
         for node in tree.traverse_preorder():
             if not node.is_root():
                 b = node.get_edge_length()
-                #tmin = b/omega[0]
-                #tmax = b/omega[-1]
-                #tau[node.idx] = uniform(tmin,tmax)
                 tau[node.idx] = b/omega[randrange(len(omega))]
     else:
         tau = init_tau_from_refTree(tree,refTree,eps_tau=eps_tau)
