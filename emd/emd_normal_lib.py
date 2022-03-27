@@ -1,16 +1,11 @@
 from treeswift import *
 import numpy as np
 from math import exp,log, sqrt, pi
-from scipy.optimize import minimize, LinearConstraint,Bounds
-from scipy.stats import poisson, expon,lognorm,norm
 from os.path import basename, dirname, splitext,realpath,join,normpath,isdir,isfile,exists
-from subprocess import check_output,call
 from tempfile import mkdtemp
 from shutil import copyfile, rmtree
 from os import remove
 from emd.util import bitset_from_tree, bitset_index
-from scipy.sparse import diags
-from scipy.sparse import csr_matrix
 import cvxpy as cp
 from random import seed,uniform, random, randrange
 from simulator.multinomial import *
@@ -49,24 +44,24 @@ def EM_date_random_init(tree,smpl_times,input_omega=None,init_rate_distr=None,s=
         print("Solving EM with init point + " + str(r+1))
         print("Random seed: " + str(rseeds[r]))
         new_tree = read_tree_newick(tree.newick())
-        try:
-            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
-            new_ref = new_tree
-            new_tree = read_tree_newick(tree.newick())
-            omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
-            phi_adjusted = [p for p in phi if p > 1e-6]
-            sum_phi = sum(phi_adjusted)
-            phi_adjusted = [p/sum_phi for p in phi_adjusted]
-            tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
-            print("New llh: " + str(llh))
-            print(new_tree.newick()) 
-            if llh > best_llh:
-                best_llh = llh  
-                best_tree = new_tree
-                best_phi = phi
-                best_omega = omega
-        except:
-            print("Failed to optimize using this init point!")        
+        #try:
+        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,input_omega=input_omega,init_rate_distr=init_rate_distr,maxIter=maxIter,refTree=refTree,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
+        new_ref = new_tree
+        new_tree = read_tree_newick(tree.newick())
+        omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
+        phi_adjusted = [p for p in phi if p > 1e-6]
+        sum_phi = sum(phi_adjusted)
+        phi_adjusted = [p/sum_phi for p in phi_adjusted]
+        tau,omega,phi,llh = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
+        print("New llh: " + str(llh))
+        print(new_tree.newick()) 
+        if llh > best_llh:
+            best_llh = llh  
+            best_tree = new_tree
+            best_phi = phi
+            best_omega = omega
+        #except:
+        #    print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
 def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,input_omega=None,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,init_rate_distr=None,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0):
@@ -86,8 +81,8 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
         Q = run_Estep(b,s,omega,tau,phi,var_apprx=True)
         if verbose:
             print("Mstep ...")   
-        next_phi,next_tau,next_omega = run_MMstep(tree,smpl_times,b,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_phi=True,fixed_tau=fixed_tau,fixed_omega=fixed_omega,mu_avg=mu_avg)
-        llh = f_ll(b,s,next_tau,next_omega,next_phi,var_apprx=True)
+        next_tau,next_omega = run_Mstep(tree,smpl_times,b,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_tau=fixed_tau,fixed_omega=fixed_omega,mu_avg=mu_avg)
+        llh = f_ll(b,s,next_tau,next_omega,phi,var_apprx=True)
         if verbose:
             print("Current llh: " + str(llh))
         curr_df = None if pre_llh is None else llh - pre_llh
@@ -95,7 +90,6 @@ def EM_date(tree,smpl_times,root_age=None,refTree=None,trueTreeFile=None,s=1000,
             print("Current df: " + str(curr_df))
         if curr_df is not None and abs(curr_df) < df:
             break
-        phi = next_phi
         tau = next_tau    
         omega = next_omega
         pre_llh = llh    
@@ -305,18 +299,17 @@ def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau,var_apprx=True):
         Q.append(q_i)
     return Q
 
-def run_MMstep(tree,smplTimes,b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_phi=True,fixed_tau=False,fixed_omega=False,mu_avg=None):
-    phi_star = compute_phi_star_cvxpy(Q,omega,mu_avg=mu_avg) if not fixed_phi else phi
+def run_Mstep(tree,smplTimes,b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_tau=False,fixed_omega=False,mu_avg=None):
     for i in range(100):
         tau_star = compute_tau_star(tree,smplTimes,omega,Q,b,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
-        omega_star = compute_omega_star(tau_star,Q,b,phi_star,mu_avg=mu_avg) if not fixed_omega else omega
+        omega_star = compute_omega_star(tau_star,Q,b,phi,mu_avg=mu_avg) if not fixed_omega else omega
         if sqrt(sum([(x-y)**2 for (x,y) in zip(omega,omega_star)])/len(omega)) < 1e-5:
             break
         if sqrt(sum([(x-y)**2 for (x,y) in zip(tau,tau_star)])/len(tau)) < 1e-5:
             break
         omega = omega_star
         tau = tau_star    
-    return phi_star, tau_star, omega_star
+    return tau_star, omega_star
     
 def f_ll(b,s,tau,omega,phi,var_apprx=True):
     ll = 0
