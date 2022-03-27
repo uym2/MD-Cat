@@ -91,7 +91,7 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,input_omega=omega,init_rate_distr=init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_tau=fixedTau,fixed_omega=fixedOmega,verbose=args["verbose"],mu_avg=muAvg,pseudo=pseudo,randseed=randseed)                 
+best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_tau=fixedTau,fixed_omega=fixedOmega,verbose=args["verbose"],mu_avg=muAvg,pseudo=pseudo,randseed=randseed)                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):
