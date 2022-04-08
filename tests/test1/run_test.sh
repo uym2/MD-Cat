@@ -1,0 +1,1 @@
+python ../../run_emd.py --annotate 3 --maxIter 500 -i input_tree.nwk -t input_sampling_times.txt  -p 1 --clockFile input_clock.txt -v --muAvg 0.006097382911671941 --pseudo 1 --randSeed 5948 -o output_tree.nwk -j output_clock.txt
