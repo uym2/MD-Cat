@@ -20,7 +20,7 @@ MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 MIN_q = 1e-5
 nDIGITS = 4 # round up outputs to 5 digits
 
-def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False):
+def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False,omg_first=False):
     best_llh = -float("inf")
     best_tree = None
     best_phi = None
@@ -45,7 +45,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
         print("Random seed: " + str(rseeds[r]))
         new_tree = read_tree_newick(tree.newick())
         try:
-            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
+            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo,omg_first=omg_first)
             convert_to_time(new_tree,tau,omega,phi,Q)
             new_ref = new_tree
             new_tree = read_tree_newick(tree.newick())
@@ -53,7 +53,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
             phi_adjusted = [p for p in phi if p > 1e-6]
             sum_phi = sum(phi_adjusted)
             phi_adjusted = [p/sum_phi for p in phi_adjusted]
-            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,init_Q=None,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
+            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,init_Q=None,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo,omg_first=omg_first) 
             # convert branch length to time unit and compute mu for each branch
             convert_to_time(new_tree,tau,omega,phi,Q)
             # compute divergence times
@@ -72,7 +72,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
             print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
-def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeFile=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,init_Q=None):
+def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeFile=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,init_Q=None,omg_first=False):
     M, dt, b = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile,pseudo=pseudo)
     Q, tau, phi, omega = init_EM(tree,b,init_rate_distr,s=s,refTree=refTree,init_Q=init_Q)
     if verbose:
@@ -87,7 +87,7 @@ def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeF
             print("EM iteration " + str(i))
         if verbose:
             print("Mstep ...")   
-        next_tau,next_omega = run_Mstep(tree,smpl_times,b,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_tau=fixed_tau,fixed_omega=fixed_omega,mu_avg=mu_avg)
+        next_tau,next_omega = run_Mstep(tree,smpl_times,b,s,omega,tau,phi,Q,M,dt,omg_first=omg_first,eps_tau=eps_tau,fixed_tau=fixed_tau,fixed_omega=fixed_omega,mu_avg=mu_avg)
         llh = f_ll(b,s,next_tau,next_omega,phi,var_apprx=True)
         if verbose:
             print("Current llh: " + str(llh))
@@ -321,7 +321,9 @@ def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau,var_apprx=True):
         Q.append(q_i)
     return Q
 
-def run_Mstep(tree,smplTimes,b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_tau=False,fixed_omega=False,mu_avg=None):
+def run_Mstep(tree,smplTimes,b,s,omega,tau,phi,Q,M,dt,omg_first=False,eps_tau=EPS_tau,fixed_tau=False,fixed_omega=False,mu_avg=None):
+    if omg_first:
+        omega = compute_omega_star(tau,Q,b,phi,mu_avg=mu_avg) if not fixed_omega else omega
     for i in range(100):
         tau_star = compute_tau_star(tree,smplTimes,omega,Q,b,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
         omega_star = compute_omega_star(tau_star,Q,b,phi,mu_avg=mu_avg) if not fixed_omega else omega
