@@ -1,6 +1,7 @@
 from random import random
 from math import *
-from scipy.stats import lognorm, expon, gamma
+import scipy.stats
+#from scipy.stats import lognorm, expon, gamma
 import jenkspy
 
 def cdf_from_pdf(p):
@@ -43,14 +44,17 @@ class exponential:
         self.mu = mu
         
     def randomize(self):
-        return expon.rvs(scale=self.mu)            
+        return scipy.stats.expon.rvs(scale=self.mu)            
 
 class gamma:
     def __init__(self,mu,sd):
         self.mu = mu
+        self.sd = sd
         
     def randomize(self):
-        return self.mu*gamma.rvs(sd*sd,scale=1/sd*sd)            
+        mu = self.mu
+        sd = self.sd
+        return mu*scipy.stats.gamma.rvs(1/sd/sd,scale=sd*sd)            
 
 class lognormal:
     def __init__(self,mu,sd):
@@ -59,7 +63,7 @@ class lognormal:
         self.mu = mu
 
     def randomize(self):
-        return self.mu*lognorm.rvs(self.sigma,0,self.scale)  
+        return self.mu*scipy.stats.lognorm.rvs(self.sigma,0,self.scale)  
 
 
 class multimodal:
