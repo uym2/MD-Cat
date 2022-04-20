@@ -44,6 +44,9 @@ if args["multimodal"] is not None:
         if m[0] == 'lnorm':
             sd = float(m[1])
             models.append(lognormal(mu,sd))
+        elif m[0] == 'gamma':
+            sd = float(m[1])
+            models.append(gamma(mu,sd))
         elif m[0] == 'exp':
             models.append(exponential(mu))
         probs.append(p)

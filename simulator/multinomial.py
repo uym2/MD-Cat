@@ -1,6 +1,6 @@
 from random import random
 from math import *
-from scipy.stats import lognorm, expon
+from scipy.stats import lognorm, expon, gamma
 import jenkspy
 
 def cdf_from_pdf(p):
@@ -44,6 +44,13 @@ class exponential:
         
     def randomize(self):
         return expon.rvs(scale=self.mu)            
+
+class gamma:
+    def __init__(self,mu,sd):
+        self.mu = mu
+        
+    def randomize(self):
+        return self.mu*gamma.rvs(sd*sd,scale=1/sd*sd)            
 
 class lognormal:
     def __init__(self,mu,sd):
