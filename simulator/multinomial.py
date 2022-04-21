@@ -1,7 +1,6 @@
 from random import random
 from math import *
 import scipy.stats
-#from scipy.stats import lognorm, expon, gamma
 import jenkspy
 
 def cdf_from_pdf(p):
@@ -65,6 +64,12 @@ class lognormal:
     def randomize(self):
         return self.mu*scipy.stats.lognorm.rvs(self.sigma,0,self.scale)  
 
+class uniform:
+    def __init__(self,mu):
+        self.mu = mu
+    def randomize(self):
+        return 2*self.mu*random()
+
 
 class multimodal:
     def __init__(self,models,probs):
@@ -76,22 +81,36 @@ class multimodal:
         r = random()
         i = binary_search(self.acc,r)
         return self.models[i].randomize()    
+
+def discrete_uniform(mu,k):
+    p = [i/(k+1) for i in range(1,k+1)] 
+    omega = [2*mu*x for x in p]
+    phi = [1.0/k]*k
+    return multinomial(omega,phi)
     
 def discrete_lognorm(mu,sd,k):
     # scipy reference https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.lognorm.html#scipy.stats.lognorm
     p = [i/(k+1) for i in range(1,k+1)] 
     sigma = sqrt(log(sd*sd+1))
     scale = 1/sqrt(sd*sd+1)
-    nu = lognorm.ppf(p,sigma,0,scale)
-    #density = lognorm.pdf(nu,sigma,0,scale)
+    nu = scipy.stats.lognorm.ppf(p,sigma,0,scale)
     omega = mu*nu
-    #phi = density/sum(density)
+    phi = [1.0/k]*k
+    return multinomial(omega,phi)
+
+def discrete_gamma(mu,sd,k):
+    # scipy reference https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.lognorm.html#scipy.stats.gamma
+    p = [i/(k+1) for i in range(1,k+1)] 
+    a = 1/sd/sd
+    scale = sd*sd
+    nu = scipy.stats.gamma.ppf(p,a,0,scale=scale)
+    omega = mu*nu
     phi = [1.0/k]*k
     return multinomial(omega,phi)
     
 def discrete_exponential(mu,k):
     p = [i/(k+1) for i in range(1,k+1)] 
-    omega = expon.ppf(p,scale=mu)
+    omega = scipy.stats.expon.ppf(p,scale=mu)
     #density = expon.pdf(omega,scale=mu)
     #phi = density/sum(density)
     phi = [1.0/k]*k

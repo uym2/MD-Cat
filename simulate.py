@@ -63,8 +63,13 @@ elif args["inMuFile"] is not None:
 elif model_args[0] == 'lnorm':
     sd = float(model_args[1])
     rate_distr = discrete_lognorm(mu,sd,k) if k is not None else lognormal(mu,sd)
+elif model_args[0] == 'gamma':
+    sd = float(model_args[1])
+    rate_distr = discrete_gamma(mu,sd,k) if k is not None else gamma(mu,sd)
 elif model_args[0] == 'exp':
     rate_distr = discrete_exponential(mu,k) if k is not None else exponential(mu)
+elif model_args[0] == "unif":
+    rate_distr = discrete_uniform(mu,k) if k is not None else uniform(mu)    
 else:
     rate_distr = None    
 
