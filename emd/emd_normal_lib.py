@@ -74,7 +74,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
 
 def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeFile=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,omg_first=False):
     M, dt, b = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile,pseudo=pseudo)
-    Q, tau, phi, omega = init_EM(tree,b,init_rate_distr,s=s,refTree=refTree)
+    tau, phi, omega = init_EM(tree,b,init_rate_distr,s=s,refTree=refTree)
     if verbose:
         print("Initialized EM")
     pre_llh = f_ll(b,s,tau,omega,phi) if tau is not None else None
@@ -85,6 +85,8 @@ def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeF
     for i in range(1,maxIter+1):
         if verbose:
             print("EM iteration " + str(i))
+            print("Estep ...")
+        Q = run_Estep(b,s,omega,tau,phi)
         if verbose:
             print("Mstep ...")   
         next_tau,next_omega = run_Mstep(tree,smpl_times,b,s,omega,tau,phi,Q,M,dt,omg_first=omg_first,eps_tau=eps_tau,fixed_tau=fixed_tau,fixed_omega=fixed_omega,mu_avg=mu_avg)
@@ -99,9 +101,6 @@ def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeF
         tau = next_tau    
         omega = next_omega
         pre_llh = llh    
-        if verbose:    
-            print("Estep ...")
-        Q = run_Estep(b,s,omega,tau,phi)
 
     return tau,omega,phi,llh,Q
 
@@ -185,7 +184,6 @@ def init_EM(tree,b,init_rate_distr,s=1000,refTree=None,eps_tau=EPS_tau):
     
     if refTree is not None:
         tau = init_tau_from_refTree(tree,refTree,eps_tau=eps_tau)
-        Q = run_Estep(b,s,omega,tau,phi)
     else:        
         N = len(list(tree.traverse_preorder()))-1
         tau = [0]*N
@@ -193,9 +191,7 @@ def init_EM(tree,b,init_rate_distr,s=1000,refTree=None,eps_tau=EPS_tau):
             if not node.is_root():
                 b_i = node.get_edge_length()
                 tau[node.idx] = b_i/omega[randrange(len(omega))]
-        #tau = [b_i/omega[randrange(len(omega))] for b_i in b]
-        Q = run_Estep(b,s,omega,tau,phi)
-    return Q,tau,phi,omega
+    return tau,phi,omega
 
 def get_tree_bitsets(tree):
     BS = bitset_from_tree(tree)

@@ -18,7 +18,6 @@ parser.add_argument("-j","--estParam",required=False,help="Write down the estima
 parser.add_argument("-p","--rep",required=False, help="The number of random replicates for initialization. Default: 100")
 parser.add_argument("-l","--seqLen",required=False, help="The length of the sequences. Default: 1000")
 parser.add_argument("-f","--refTreeFile",required=False, help="A reference time tree as initial solution. Default: None")
-parser.add_argument("-Q","--refQ",required=False, help="Initial posterior Q. Default: None.")
 parser.add_argument("--assignLabel",action='store_true',help="Assign label to internal nodes. Default: NO")
 parser.add_argument("--clockFile",required=False,help="A file that defines a customized (discretized) clock model. Will override --bins")
 parser.add_argument("--muAvg",required=False,help="Fix the average mutation rate to this value in the first round search")
@@ -94,18 +93,6 @@ else:
     print("ERROR: neither --clockFile or --bins is specified. Please specify one of those two options. Exit now!")
     exit()
 
-QFile = args["refQ"]
-if QFile is None:
-    init_Q = None
-else:    
-    init_Q = {}
-    with open(QFile,'r') as f:
-        for line in f:
-            line_split = line.strip().split()
-            lb = line_split[0]
-            q = [float(x) for x in line_split[1:]]
-            init_Q[lb] = q
-
 tree = read_tree_newick(intreeFile)
 if args["assignLabel"]:
     nodeIdx = 0
@@ -114,7 +101,7 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_tau=fixedTau,fixed_omega=fixedOmega,verbose=args["verbose"],mu_avg=muAvg,pseudo=pseudo,randseed=randseed,place_mu=place_mu,place_q=place_q,init_Q=init_Q,omg_first=(refTree is not None))                 
+best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_tau=fixedTau,fixed_omega=fixedOmega,verbose=args["verbose"],mu_avg=muAvg,pseudo=pseudo,randseed=randseed,place_mu=place_mu,place_q=place_q,omg_first=(refTree is not None))                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):
