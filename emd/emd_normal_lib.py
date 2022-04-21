@@ -77,7 +77,7 @@ def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeF
     Q, tau, phi, omega = init_EM(tree,b,init_rate_distr,s=s,refTree=refTree,init_Q=init_Q)
     if verbose:
         print("Initialized EM")
-    pre_llh = f_ll(b,s,tau,omega,phi,var_apprx=True) if tau is not None else None
+    pre_llh = f_ll(b,s,tau,omega,phi) if tau is not None else None
     if verbose:
         print("EM iteration 0")
         if pre_llh is not None:
@@ -88,7 +88,7 @@ def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeF
         if verbose:
             print("Mstep ...")   
         next_tau,next_omega = run_Mstep(tree,smpl_times,b,s,omega,tau,phi,Q,M,dt,omg_first=omg_first,eps_tau=eps_tau,fixed_tau=fixed_tau,fixed_omega=fixed_omega,mu_avg=mu_avg)
-        llh = f_ll(b,s,next_tau,next_omega,phi,var_apprx=True)
+        llh = f_ll(b,s,next_tau,next_omega,phi)
         if verbose:
             print("Current llh: " + str(llh))
         curr_df = None if pre_llh is None else llh - pre_llh
@@ -101,7 +101,7 @@ def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeF
         pre_llh = llh    
         if verbose:    
             print("Estep ...")
-        Q = run_Estep(b,s,omega,tau,phi,var_apprx=True)
+        Q = run_Estep(b,s,omega,tau,phi)
 
     return tau,omega,phi,llh,Q
 
@@ -187,7 +187,7 @@ def init_EM(tree,b,init_rate_distr,init_Q=None,s=1000,refTree=None,eps_tau=EPS_t
     
     if refTree is not None:
         tau = init_tau_from_refTree(tree,refTree,eps_tau=eps_tau)
-        Q = run_Estep(b,s,omega,tau,phi,var_apprx=True)
+        Q = run_Estep(b,s,omega,tau,phi)
     elif init_Q is not None:
         N = len(list(tree.traverse_preorder()))-1
         Q = [[] for i in range(N)]
@@ -203,7 +203,7 @@ def init_EM(tree,b,init_rate_distr,init_Q=None,s=1000,refTree=None,eps_tau=EPS_t
                 b_i = node.get_edge_length()
                 tau[node.idx] = b_i/omega[randrange(len(omega))]
         #tau = [b_i/omega[randrange(len(omega))] for b_i in b]
-        Q = run_Estep(b,s,omega,tau,phi,var_apprx=True)
+        Q = run_Estep(b,s,omega,tau,phi)
     return Q,tau,phi,omega
 
 def get_tree_bitsets(tree):
@@ -297,7 +297,7 @@ def log_sum_exp(numlist):
 #    result = minx + log(s)  if s > 0 else log(len(numlist)) + MIN_ll
 #    return result
 
-def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau,var_apprx=True):
+def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau):
     N = len(b)
     k = len(omega)
     Q = []
@@ -308,7 +308,8 @@ def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau,var_apprx=True):
             continue
         lq_i = [0]*k
         for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
-            var_ij = omega_j*tau_i/s if not var_apprx else b_i/s
+            #var_ij = omega_j*tau_i/s if not var_apprx else b_i/s
+            var_ij = b_i/s
             lq_i[j] += (-(b_i-omega_j*tau_i)**2/2/var_ij + log(phi_j) - log(var_ij)/2)
         s_lqi = log_sum_exp(lq_i)
         q_i = [exp(x-s_lqi) for x in lq_i]
@@ -335,7 +336,7 @@ def run_Mstep(tree,smplTimes,b,s,omega,tau,phi,Q,M,dt,omg_first=False,eps_tau=EP
         tau = tau_star    
     return tau_star, omega_star
     
-def f_ll(b,s,tau,omega,phi,var_apprx=True):
+def f_ll(b,s,tau,omega,phi):
     ll = 0
     k = len(phi)
     for (tau_i,b_i) in zip(tau,b):
@@ -343,22 +344,9 @@ def f_ll(b,s,tau,omega,phi,var_apprx=True):
             continue
         ll_i = [0]*k
         for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
-            var_ij = tau_i*omega_j/s if not var_apprx else b_i/s
+            #var_ij = tau_i*omega_j/s if not var_apprx else b_i/s
+            var_ij = b_i/s
             ll_i[j] += (-log(sqrt(2*pi))-(log(var_ij))/2-(b_i-tau_i*omega_j)**2/2/var_ij + log(phi_j))
-        result = log_sum_exp(ll_i)
-        ll += result
-    return ll
-
-def f_score(b,s,tau,omega,phi,var_apprx=True):
-    ll = 0
-    k = len(phi)
-    for (tau_i,b_i) in zip(tau,b):
-        if b_i is None:
-            continue
-        ll_i = [0]*k
-        for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
-            var_ij = tau_i*omega_j/s if not var_apprx else b_i/s
-            ll_i[j] += -tau_i*(b_i-tau_i*omega_j)**2/2/var_ij
         result = log_sum_exp(ll_i)
         ll += result
     return ll
@@ -611,12 +599,12 @@ def compute_omega_star(tau,Q,b,phi,eps_omg=EPS_omg,mu_avg=None,maxIter=100):
                 omega = [m+alpha*(ms-m) for m,ms in zip(omega,omega_star)] # feasible omega       
     return omega                    
 
-def compute_f_MM(tau,omega,Q,b,s,var_apprx=True):
+def compute_f_MM(tau,omega,Q,b,s):
     N = len(tau)
     k = len(omega)
     F = 0
     for i in range(N):
         for j in range(k):
-            w_ij = b[i] if var_apprx else omega[j]*tau[i]
+            w_ij = b[i] #if var_apprx else omega[j]*tau[i]
             F += s*Q[i][j]*(b[i]-omega[j]*tau[i])**2/w_ij + Q[i][j]*log(w_ij)       
     return F
