@@ -20,7 +20,7 @@ MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 MIN_q = 1e-5
 nDIGITS = 4 # round up outputs to 5 digits
 
-def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False,omg_first=False):
+def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False,omg_first=False):
     best_llh = -float("inf")
     best_tree = None
     best_phi = None
@@ -45,7 +45,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
         print("Random seed: " + str(rseeds[r]))
         new_tree = read_tree_newick(tree.newick())
         try:
-            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo,omg_first=omg_first)
+            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo,omg_first=omg_first)
             convert_to_time(new_tree,tau,omega,phi,Q)
             new_ref = new_tree
             new_tree = read_tree_newick(tree.newick())
@@ -53,7 +53,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
             phi_adjusted = [p for p in phi if p > 1e-6]
             sum_phi = sum(phi_adjusted)
             phi_adjusted = [p/sum_phi for p in phi_adjusted]
-            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,init_Q=None,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo,omg_first=omg_first) 
+            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo,omg_first=omg_first) 
             # convert branch length to time unit and compute mu for each branch
             convert_to_time(new_tree,tau,omega,phi,Q)
             # compute divergence times
@@ -72,9 +72,9 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
             print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
-def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeFile=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,init_Q=None,omg_first=False):
+def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeFile=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,omg_first=False):
     M, dt, b = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile,pseudo=pseudo)
-    Q, tau, phi, omega = init_EM(tree,b,init_rate_distr,s=s,refTree=refTree,init_Q=init_Q)
+    Q, tau, phi, omega = init_EM(tree,b,init_rate_distr,s=s,refTree=refTree)
     if verbose:
         print("Initialized EM")
     pre_llh = f_ll(b,s,tau,omega,phi) if tau is not None else None
@@ -179,22 +179,13 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False,place
         lb = lb + tag if lb else tag
         node.set_label(lb)
 
-def init_EM(tree,b,init_rate_distr,init_Q=None,s=1000,refTree=None,eps_tau=EPS_tau):
-# IMPORTANT: assume only one of the two options are active: init_Q or refTree
-# if both are active, refTree has higher priority and will override init_Q 
+def init_EM(tree,b,init_rate_distr,s=1000,refTree=None,eps_tau=EPS_tau):
     omega = init_rate_distr.omega
     phi = init_rate_distr.phi
     
     if refTree is not None:
         tau = init_tau_from_refTree(tree,refTree,eps_tau=eps_tau)
         Q = run_Estep(b,s,omega,tau,phi)
-    elif init_Q is not None:
-        N = len(list(tree.traverse_preorder()))-1
-        Q = [[] for i in range(N)]
-        for node in tree.traverse_postorder():
-            if node.label in init_Q:
-                Q[node.idx] = init_Q[node.label]
-        tau = None
     else:        
         N = len(list(tree.traverse_preorder()))-1
         tau = [0]*N
