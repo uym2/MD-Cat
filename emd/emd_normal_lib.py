@@ -9,6 +9,8 @@ from emd.util import bitset_from_tree, bitset_index
 from random import seed,uniform, random, randrange
 from simulator.multinomial import *
 import time
+import cvxpy as cp
+from scipy.sparse import csr_matrix
 
 EPS_tau=1e-3
 EPS_omg = 0.0001
@@ -18,7 +20,7 @@ PSEUDO = 1.0
 MIN_b=0
 MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 MIN_q = 1e-5
-nDIGITS = 4 # round up outputs to 5 digits
+nDIGITS = 4 # round up outputs to 4 digits
 
 def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False):
     best_llh = -float("inf")
@@ -44,36 +46,36 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
         print("Solving EM with init point + " + str(r+1))
         print("Random seed: " + str(rseeds[r]))
         new_tree = read_tree_newick(tree.newick())
-        try:
-            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
-            convert_to_time(new_tree,tau,omega,phi,Q)
-            new_ref = new_tree
-            new_tree = read_tree_newick(tree.newick())
-            omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
-            phi_adjusted = [p for p in phi if p > 1e-6]
-            sum_phi = sum(phi_adjusted)
-            phi_adjusted = [p/sum_phi for p in phi_adjusted]
-            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,init_Q=None,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
-            # convert branch length to time unit and compute mu for each branch
-            convert_to_time(new_tree,tau,omega,phi,Q)
-            # compute divergence times
-            compute_divergence_time(new_tree,smpl_times,place_mu=place_mu,place_q=place_q)
-            # output
-            if verbose:
-                print("New llh: " + str(llh))
-                print("New tree: " + new_tree.newick()) 
-                print("New omega: " + " ".join(str(round(x,nDIGITS)) for x in omega))
-            if llh > best_llh:
-                best_llh = llh  
-                best_tree = new_tree
-                best_phi = phi
-                best_omega = omega
-        except:
-            print("Failed to optimize using this init point!")        
+        #try:
+        tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
+        convert_to_time(new_tree,tau,omega,phi,Q)
+        new_ref = new_tree
+        new_tree = read_tree_newick(tree.newick())
+        omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
+        phi_adjusted = [p for p in phi if p > 1e-6]
+        sum_phi = sum(phi_adjusted)
+        phi_adjusted = [p/sum_phi for p in phi_adjusted]
+        tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,init_Q=None,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
+        # convert branch length to time unit and compute mu for each branch
+        convert_to_time(new_tree,tau,omega,phi,Q)
+        # compute divergence times
+        compute_divergence_time(new_tree,smpl_times,place_mu=place_mu,place_q=place_q)
+        # output
+        if verbose:
+            print("New llh: " + str(llh))
+            print("New tree: " + new_tree.newick()) 
+            print("New omega: " + " ".join(str(round(x,nDIGITS)) for x in omega))
+        if llh > best_llh:
+            best_llh = llh  
+            best_tree = new_tree
+            best_phi = phi
+            best_omega = omega
+        #except:
+        #    print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
-def EM_date(tree,smpl_times,init_rate_distr,root_age=None,refTree=None,trueTreeFile=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,init_Q=None):
-    M, dt, b = setup_constr(tree,smpl_times,s,root_age=root_age,eps_tau=eps_tau,trueTreeFile=trueTreeFile,pseudo=pseudo)
+def EM_date(tree,smpl_times,init_rate_distr,refTree=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,init_Q=None):
+    M, dt, b = setup_constr(tree,smpl_times,s,eps_tau=eps_tau,pseudo=pseudo)
     Q, tau, phi, omega = init_EM(tree,b,init_rate_distr,s=s,refTree=refTree,init_Q=init_Q)
     if verbose:
         print("Initialized EM")
@@ -226,7 +228,7 @@ def init_tau_from_refTree(my_tree,refTree,eps_tau=EPS_tau):
             tau[bits2idx[node.bits]] = max(node.edge_length,eps_tau)
     return tau        
 
-def setup_constr(tree,smpl_times,s,root_age=None,eps_tau=EPS_tau,trueTreeFile=None,pseudo=0):
+def setup_constr(tree,smpl_times,s,eps_tau=EPS_tau,pseudo=0):
     n = len(list(tree.traverse_leaves()))
     N = 2*n-2
 
@@ -240,40 +242,37 @@ def setup_constr(tree,smpl_times,s,root_age=None,eps_tau=EPS_tau,trueTreeFile=No
     for node in tree.traverse_postorder():
         node.idx = idx
         idx += 1
-        if node.is_leaf():
+        if not node.is_root():
+            b[node.idx] = node.edge_length+pseudo/s
+        if node.label in smpl_times:
+            node.active = True
             node.constraint = [0.]*N
             node.constraint[node.idx] = 1
-            node.t = smpl_times[node.get_label()]
-            b[node.idx] = node.edge_length+pseudo/s
-            name = node.get_label()
-            lb2idx[name] = node.idx
-        else:
-            children = node.child_nodes()      
-            m = [x-y for (x,y) in zip(children[0].constraint,children[1].constraint)]
-            dt_i = children[0].t - children[1].t
-            M.append(m)
-            dt.append(dt_i)
-
-            if not node.is_root(): 
-                node.constraint = children[0].constraint
-                node.constraint[node.idx] = 1
-                node.t = children[0].t
-                b[node.idx] = node.edge_length+pseudo/s
-                name = node.get_label()
-                lb2idx[name] = node.idx
-            elif root_age is not None:
-                m = children[0].constraint
-                dt_i = children[0].t - root_age
+            node.t = smpl_times[node.label]
+        if node.is_leaf():
+            node.active = node.label in smpl_times
+            continue
+        # internal nodes
+        active_children = [c for c in node.child_nodes() if c.active]
+        node.active = (len(active_children) > 0)
+        if not node.active:
+            continue
+        else:                    
+            child0 = active_children[0]
+            for child in active_children[1:]: 
+                m = [x-y for (x,y) in zip(child0.constraint,child.constraint)]
+                dt_i = child0.t - child.t
+                M.append(m)
+                dt.append(dt_i)
+            if node.label in smpl_times:
+                m = child0.constraint
+                dt_i = child0.t - node.t
                 M.append(m) 
-                dt.append(dt_i)  
-
-    if trueTreeFile is not None:
-        trueTree = read_tree_newick(trueTreeFile) 
-        for node in trueTree.traverse_postorder():
-            lb = node.get_label()
-            if lb in lb2idx:
-                idx = lb2idx[lb]
-
+                dt.append(dt_i) 
+            elif not node.is_root():    
+                node.constraint = child0.constraint
+                node.constraint[node.idx] = 1
+                node.t = child0.t
     return M,dt,b
 
 def log_sum_exp(numlist):
@@ -323,7 +322,8 @@ def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau,var_apprx=True):
 
 def run_Mstep(tree,smplTimes,b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_tau=False,fixed_omega=False,mu_avg=None):
     for i in range(100):
-        tau_star = compute_tau_star(tree,smplTimes,omega,Q,b,s,M,dt,eps_tau=EPS_tau) if not fixed_tau else tau
+        #tau_star = compute_tau_star(tree,smplTimes,omega,Q,b,s,M,dt,eps_tau=eps_tau) if not fixed_tau else tau
+        tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=eps_tau,var_apprx=True) if not fixed_tau else tau
         omega_star = compute_omega_star(tau_star,Q,b,phi,mu_avg=mu_avg) if not fixed_omega else omega
         if omega is not None and sqrt(sum([(x-y)**2 for (x,y) in zip(omega,omega_star)])/len(omega)) < 1e-5:
             break
@@ -618,3 +618,33 @@ def compute_f_MM(tau,omega,Q,b,s,var_apprx=True):
             w_ij = b[i] if var_apprx else omega[j]*tau[i]
             F += s*Q[i][j]*(b[i]-omega[j]*tau[i])**2/w_ij + Q[i][j]*log(w_ij)       
     return F
+
+def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,var_apprx=False):
+    N = len(b)
+    k = len(omega)
+    Pd = np.zeros(N)
+    q = np.zeros(N)
+
+    for i in range(N):
+        if b[i] is None:
+            continue
+        for j in range(k):
+            if not var_apprx:
+                w_ij = omega[j]*tau[i] # weight by the variance multiplied with s; use previous tau to estimate
+            else:
+                w_ij = b[i]    
+            Pd[i] += Q[i][j]*omega[j]**2/w_ij
+            q[i] -= 2*b[i]*Q[i][j]*omega[j]/w_ij
+          
+    P = np.diag(Pd)        
+    var_tau = cp.Variable(N)
+       
+    objective = cp.Minimize(cp.quad_form(var_tau,P) + q.T @ var_tau)
+    upper_bound = np.array([float("inf") if b_i is not None else 1.0/6 for b_i in b])
+    constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
+
+    prob = cp.Problem(objective,constraints)
+    f_star = prob.solve(verbose=False,solver=cp.MOSEK)
+    tau_star = var_tau.value
+
+    return tau_star
