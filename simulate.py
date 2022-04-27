@@ -50,7 +50,9 @@ if args["multimodal"] is not None:
         elif m[0] == 'exp':
             models.append(exponential(mu))
         probs.append(p)
-    rate_distr = multimodal(models,probs)                
+    sp = sum(probs)
+    probs_norm = [x/sp for x in probs]
+    rate_distr = multimodal(models,probs_norm)                
 elif args["inMuFile"] is not None:
     omega = []
     phi = []
