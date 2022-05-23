@@ -1,1 +1,1 @@
-# EM_Date
+# MD-Cat: Molecular Dating using Categorical model
