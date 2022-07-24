@@ -229,8 +229,9 @@ def init_tau_from_refTree(my_tree,refTree,eps_tau=EPS_tau):
     return tau        
 
 def setup_constr(tree,smpl_times,s,eps_tau=EPS_tau,pseudo=0):
-    n = len(list(tree.traverse_leaves()))
-    N = 2*n-2
+    #n = len(list(tree.traverse_leaves()))
+    #N = 2*n-2
+    N = len(list(tree.traverse_postorder()))-1
 
     M = []
     dt = []
@@ -246,9 +247,10 @@ def setup_constr(tree,smpl_times,s,eps_tau=EPS_tau,pseudo=0):
             b[node.idx] = node.edge_length+pseudo/s
         if node.label in smpl_times:
             node.active = True
-            node.constraint = [0.]*N
-            node.constraint[node.idx] = 1
             node.t = smpl_times[node.label]
+            if not node.is_root():
+                node.constraint = [0.]*N
+                node.constraint[node.idx] = 1
         if node.is_leaf():
             node.active = node.label in smpl_times
             continue
