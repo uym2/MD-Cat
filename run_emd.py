@@ -4,15 +4,14 @@ from emd.emd_normal_lib import *
 from treeswift import *
 import argparse
 from simulator.multinomial import *
-import random
 import sys
 import time
-
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument("-i","--input",required=True,help="Input trees")
 parser.add_argument("-t","--samplingTime",required=True,help="Sampling time")
+parser.add_argument("-b","--backward",action='store_true',help="Use backward time and enforce ultrametricity. This option is useful for fossil calibrations with present-time sequences. Default: NO") 
 parser.add_argument("-o","--output",required=False,help="The output trees with branch lengths in time unit. Default: [input].emDate")
 parser.add_argument("-j","--estParam",required=False,help="Write down the estimated parameters (omega and phi) to this file. Default: [input].emParam")
 parser.add_argument("-p","--rep",required=False, help="The number of random replicates for initialization. Default: 100")
@@ -50,6 +49,9 @@ maxIter = int(args["maxIter"]) if args["maxIter"] else 100
 fixedTau = args["fixedTau"]
 fixedOmega = args["fixedOmega"]
 muAvg = float(args["muAvg"]) if args["muAvg"] is not None else None
+bw_time = args["backward"]
+leaf_time = 0 if bw_time else None
+
 try:
     opt = int(args["annotate"])
 except:
@@ -64,11 +66,6 @@ try:
         randseed = randseed[0]
 except:
     randseed = None
-
-with open(timeFile,"r") as fin:
-    for line in fin:
-        name,age = line.split()
-        smpl_times[name] = float(age)
 
 pseudo = float(args["pseudo"]) if args["pseudo"] else 0
 
@@ -114,7 +111,7 @@ if args["assignLabel"]:
             node.set_label("I" + str(nodeIdx))
             nodeIdx += 1           
 
-best_tree,best_llh,best_phi,best_omega = EM_date_random_init(tree,smpl_times,init_rate_distr,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_tau=fixedTau,fixed_omega=fixedOmega,verbose=args["verbose"],mu_avg=muAvg,pseudo=pseudo,randseed=randseed,place_mu=place_mu,place_q=place_q,init_Q=init_Q)                 
+best_tree,best_llh,best_phi,best_omega = MDCat(tree,init_rate_distr,sampling_time=timeFile,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=refTree,fixed_tau=fixedTau,fixed_omega=fixedOmega,verbose=args["verbose"],mu_avg=muAvg,pseudo=pseudo,randseed=randseed,place_mu=place_mu,place_q=place_q,init_Q=init_Q,root_time=None,leaf_time=leaf_time,bw_time=bw_time)                 
 best_tree.write_tree_newick(outtreeFile)
 with open(infoFile,'w') as finfo:
     for (o,p) in zip(best_omega,best_phi):

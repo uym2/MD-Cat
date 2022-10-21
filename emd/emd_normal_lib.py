@@ -5,7 +5,8 @@ from os.path import basename, dirname, splitext,realpath,join,normpath,isdir,isf
 from tempfile import mkdtemp
 from shutil import copyfile, rmtree
 from os import remove
-from emd.util import bitset_from_tree, bitset_index
+from emd.lca_lib import find_LCAs
+from emd.util import bitset_from_tree, bitset_index,date_to_days, days_to_date
 from random import seed,uniform, random, randrange
 from simulator.multinomial import *
 import time
@@ -21,6 +22,10 @@ MIN_b=0
 MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 MIN_q = 1e-5
 nDIGITS = 4 # round up outputs to 4 digits
+
+def MDCat(tree,init_rate_distr,sampling_time=None,bw_time=False,as_date=False,root_time=0,leaf_time=1,mu_avg=None,nrep=100,maxIter=100,randseed=None,pseudo=1,s=1000,verbose=False,place_mu=True,place_q=False,refTree=None,fixed_tau=False,fixed_omega=False,init_Q=None):
+    smpl_times = setup_smpl_time(tree,sampling_time=sampling_time,bw_time=bw_time,as_date=as_date,root_time=root_time,leaf_time=leaf_time)    
+    return EM_date_random_init(tree,smpl_times,init_rate_distr,s=s,nrep=nrep,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,fixed_omega=fixed_omega,verbose=verbose,mu_avg=mu_avg,randseed=randseed,pseudo=pseudo,place_mu=place_mu,place_q=place_mu)        
 
 def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False):
     best_llh = -float("inf")
@@ -228,9 +233,67 @@ def init_tau_from_refTree(my_tree,refTree,eps_tau=EPS_tau):
             tau[bits2idx[node.bits]] = max(node.edge_length,eps_tau)
     return tau        
 
+def setup_smpl_time(tree,sampling_time=None,bw_time=False,as_date=False,root_time=0,leaf_time=1):
+# Note: if as_date is True, bw_time will be ignored 
+    # if the root is not labeled, give it the label "autoLabel0"
+    if tree.root.label is None:
+        tree.root.label = "autoLabel0"
+    smpl_times = {}   
+    if root_time is not None: 
+        smpl_times[tree.root.label] = root_time if not bw_time else -root_time
+    if leaf_time is not None:    
+        for node in tree.traverse_leaves():
+            smpl_times[node.label] = leaf_time if not bw_time else -leaf_time
+    # case 1: no sampling time given --> return the smpl_times defined by root_time and leaf_time
+    if not sampling_time:
+        return smpl_times
+    
+    # case 2: read in user-specified sampling times; allow overriding root and leaf times
+    queries = []
+    times = []
+    names = []
+    with open(sampling_time,"r") as fin:
+        for line in fin:
+            ID,t = line.split()
+            spl = ID.split('=')
+            if len(spl) > 1:
+                name,q = spl
+            else:
+                name = []
+                q = spl[0]    
+            q = q.split('+')
+            if as_date:
+                t = date_to_days(t)
+            else:    
+                t = float(t) if not bw_time else -float(t)
+            queries.append(q)
+            times.append(t)
+            names.append(name)
+    calibs = find_LCAs(tree,queries) 
+    calibID = 1
+    ndigits = len(str(len(calibs)))
+    for node,time,name in zip(calibs,times,names):
+        if node is None:
+            continue
+        if name:
+            if node.is_leaf():
+                node.taxon.label = name
+            else:
+                node.label = name
+            lb = name
+        else:
+            if node.is_leaf():
+                lb = node.label
+            elif node.label is None:
+                lb = "autoLabel" + str(calibID).rjust(ndigits,'0')
+                node.label = lb
+                calibID += 1
+            else:
+                lb = node.label    
+        smpl_times[lb] = time       
+    return smpl_times   
+
 def setup_constr(tree,smpl_times,s,eps_tau=EPS_tau,pseudo=0):
-    #n = len(list(tree.traverse_leaves()))
-    #N = 2*n-2
     N = len(list(tree.traverse_postorder()))-1
 
     M = []
