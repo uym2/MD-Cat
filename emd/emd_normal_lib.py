@@ -40,7 +40,7 @@ def MDCat(tree,k,sampling_time=None,bw_time=False,as_date=False,root_time=0,leaf
     init_rate_distr = initialize_rates(k,mu_avg) 
     return EM_date_random_init(tree,smpl_times,init_rate_distr,s=s,nrep=nrep,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,fixed_omega=fixed_omega,verbose=verbose,mu_avg=mu_avg,randseed=randseed,pseudo=pseudo,place_mu=place_mu,place_q=place_q)        
 
-def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False,omg_first=False):
+def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False):
     best_llh = -float("inf")
     best_tree = None
     best_phi = None
@@ -64,7 +64,6 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
         print("Solving EM with init point + " + str(r+1))
         print("Random seed: " + str(rseeds[r]))
         new_tree = read_tree_newick(tree.newick())
-        
         #try:
         tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
         convert_to_time(new_tree,tau,omega,phi,Q)
@@ -96,10 +95,9 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
 def EM_date(tree,smpl_times,init_rate_distr,refTree=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,init_Q=None):
     M, dt, b = setup_constr(tree,smpl_times,s,eps_tau=eps_tau,pseudo=pseudo)
     Q, tau, phi, omega = init_EM(tree,b,init_rate_distr,s=s,refTree=refTree,init_Q=init_Q)
-    
     if verbose:
         print("Initialized EM")
-    pre_llh = f_ll(b,s,tau,omega,phi) if tau is not None else None
+    pre_llh = f_ll(b,s,tau,omega,phi,var_apprx=True) if tau is not None else None
     if verbose:
         print("EM iteration 0")
         if pre_llh is not None:
@@ -107,12 +105,10 @@ def EM_date(tree,smpl_times,init_rate_distr,refTree=None,s=1000,df=5e-4,maxIter=
     for i in range(1,maxIter+1):
         if verbose:
             print("EM iteration " + str(i))
-            print("Estep ...")
-        Q = run_Estep(b,s,omega,tau,phi)
         if verbose:
             print("Mstep ...")   
-        next_tau,next_omega = run_Mstep(tree,smpl_times,b,s,omega,tau,phi,Q,M,dt,omg_first=omg_first,eps_tau=eps_tau,fixed_tau=fixed_tau,fixed_omega=fixed_omega,mu_avg=mu_avg)
-        llh = f_ll(b,s,next_tau,next_omega,phi)
+        next_tau,next_omega = run_Mstep(tree,smpl_times,b,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_tau=fixed_tau,fixed_omega=fixed_omega,mu_avg=mu_avg)
+        llh = f_ll(b,s,next_tau,next_omega,phi,var_apprx=True)
         if verbose:
             print("Current llh: " + str(llh))
         curr_df = None if pre_llh is None else llh - pre_llh
@@ -123,6 +119,9 @@ def EM_date(tree,smpl_times,init_rate_distr,refTree=None,s=1000,df=5e-4,maxIter=
         tau = next_tau    
         omega = next_omega
         pre_llh = llh    
+        if verbose:    
+            print("Estep ...")
+        Q = run_Estep(b,s,omega,tau,phi,var_apprx=True)
 
     return tau,omega,phi,llh,Q
 
@@ -200,12 +199,22 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False,place
         lb = lb + tag if lb else tag
         node.set_label(lb)
 
-def init_EM(tree,b,init_rate_distr,s=1000,refTree=None,eps_tau=EPS_tau):
+def init_EM(tree,b,init_rate_distr,init_Q=None,s=1000,refTree=None,eps_tau=EPS_tau):
+# IMPORTANT: assume only one of the two options are active: init_Q or refTree
+# if both are active, refTree has higher priority and will override init_Q 
     omega = init_rate_distr.omega
     phi = init_rate_distr.phi
     
     if refTree is not None:
         tau = init_tau_from_refTree(tree,refTree,eps_tau=eps_tau)
+        Q = run_Estep(b,s,omega,tau,phi,var_apprx=True)
+    elif init_Q is not None:
+        N = len(list(tree.traverse_preorder()))-1
+        Q = [[] for i in range(N)]
+        for node in tree.traverse_postorder():
+            if node.label in init_Q:
+                Q[node.idx] = init_Q[node.label]
+        tau = None
     else:        
         N = len(list(tree.traverse_preorder()))-1
         tau = [0]*N
@@ -213,7 +222,9 @@ def init_EM(tree,b,init_rate_distr,s=1000,refTree=None,eps_tau=EPS_tau):
             if not node.is_root():
                 b_i = node.get_edge_length()
                 tau[node.idx] = b_i/omega[randrange(len(omega))]
-    return tau,phi,omega
+        #tau = [b_i/omega[randrange(len(omega))] for b_i in b]
+        Q = run_Estep(b,s,omega,tau,phi,var_apprx=True)
+    return Q,tau,phi,omega
 
 def get_tree_bitsets(tree):
     BS = bitset_from_tree(tree)
@@ -363,7 +374,7 @@ def log_sum_exp(numlist):
 #    result = minx + log(s)  if s > 0 else log(len(numlist)) + MIN_ll
 #    return result
 
-def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau):
+def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau,var_apprx=True):
     N = len(b)
     k = len(omega)
     Q = []
@@ -374,8 +385,7 @@ def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau):
             continue
         lq_i = [0]*k
         for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
-            #var_ij = omega_j*tau_i/s if not var_apprx else b_i/s
-            var_ij = b_i/s
+            var_ij = omega_j*tau_i/s if not var_apprx else b_i/s
             lq_i[j] += (-(b_i-omega_j*tau_i)**2/2/var_ij + log(phi_j) - log(var_ij)/2)
         s_lqi = log_sum_exp(lq_i)
         q_i = [exp(x-s_lqi) for x in lq_i]
@@ -388,9 +398,7 @@ def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau):
         Q.append(q_i)
     return Q
 
-def run_Mstep(tree,smplTimes,b,s,omega,tau,phi,Q,M,dt,omg_first=False,eps_tau=EPS_tau,fixed_tau=False,fixed_omega=False,mu_avg=None):
-    if omg_first:
-        omega = compute_omega_star(tau,Q,b,phi,mu_avg=mu_avg) if not fixed_omega else omega
+def run_Mstep(tree,smplTimes,b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_tau=False,fixed_omega=False,mu_avg=None):
     for i in range(100):
         #tau_star = compute_tau_star(tree,smplTimes,omega,Q,b,s,M,dt,eps_tau=eps_tau) if not fixed_tau else tau
         tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=eps_tau,var_apprx=True) if not fixed_tau else tau
@@ -403,7 +411,7 @@ def run_Mstep(tree,smplTimes,b,s,omega,tau,phi,Q,M,dt,omg_first=False,eps_tau=EP
         tau = tau_star    
     return tau_star, omega_star
     
-def f_ll(b,s,tau,omega,phi):
+def f_ll(b,s,tau,omega,phi,var_apprx=True):
     ll = 0
     k = len(phi)
     for (tau_i,b_i) in zip(tau,b):
@@ -411,9 +419,22 @@ def f_ll(b,s,tau,omega,phi):
             continue
         ll_i = [0]*k
         for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
-            #var_ij = tau_i*omega_j/s if not var_apprx else b_i/s
-            var_ij = b_i/s
+            var_ij = tau_i*omega_j/s if not var_apprx else b_i/s
             ll_i[j] += (-log(sqrt(2*pi))-(log(var_ij))/2-(b_i-tau_i*omega_j)**2/2/var_ij + log(phi_j))
+        result = log_sum_exp(ll_i)
+        ll += result
+    return ll
+
+def f_score(b,s,tau,omega,phi,var_apprx=True):
+    ll = 0
+    k = len(phi)
+    for (tau_i,b_i) in zip(tau,b):
+        if b_i is None:
+            continue
+        ll_i = [0]*k
+        for j,(omega_j,phi_j) in enumerate(zip(omega,phi)):
+            var_ij = tau_i*omega_j/s if not var_apprx else b_i/s
+            ll_i[j] += -tau_i*(b_i-tau_i*omega_j)**2/2/var_ij
         result = log_sum_exp(ll_i)
         ll += result
     return ll
@@ -666,13 +687,13 @@ def compute_omega_star(tau,Q,b,phi,eps_omg=EPS_omg,mu_avg=None,maxIter=100):
                 omega = [m+alpha*(ms-m) for m,ms in zip(omega,omega_star)] # feasible omega       
     return omega                    
 
-def compute_f_MM(tau,omega,Q,b,s):
+def compute_f_MM(tau,omega,Q,b,s,var_apprx=True):
     N = len(tau)
     k = len(omega)
     F = 0
     for i in range(N):
         for j in range(k):
-            w_ij = b[i] #if var_apprx else omega[j]*tau[i]
+            w_ij = b[i] if var_apprx else omega[j]*tau[i]
             F += s*Q[i][j]*(b[i]-omega[j]*tau[i])**2/w_ij + Q[i][j]*log(w_ij)       
     return F
 
