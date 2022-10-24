@@ -38,7 +38,7 @@ You need to have:
 After installation, run:
 
 ```bash
-md_cat.py -h
+python3 md_cat.py -h
 ```
 to see the commandline help of MD-Cat.
 
