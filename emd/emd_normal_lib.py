@@ -7,6 +7,7 @@ from shutil import copyfile, rmtree
 from os import remove
 from emd.lca_lib import find_LCAs
 from emd.util import bitset_from_tree, bitset_index,date_to_days, days_to_date
+from emd.rtt_lib import rtt_mu 
 from random import seed,uniform, random, randrange
 from simulator.multinomial import *
 import time
@@ -23,9 +24,21 @@ MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 MIN_q = 1e-5
 nDIGITS = 4 # round up outputs to 4 digits
 
-def MDCat(tree,init_rate_distr,sampling_time=None,bw_time=False,as_date=False,root_time=0,leaf_time=1,mu_avg=None,nrep=100,maxIter=100,randseed=None,pseudo=1,s=1000,verbose=False,place_mu=True,place_q=False,refTree=None,fixed_tau=False,fixed_omega=False,init_Q=None):
-    smpl_times = setup_smpl_time(tree,sampling_time=sampling_time,bw_time=bw_time,as_date=as_date,root_time=root_time,leaf_time=leaf_time)    
-    return EM_date_random_init(tree,smpl_times,init_rate_distr,s=s,nrep=nrep,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,fixed_omega=fixed_omega,verbose=verbose,mu_avg=mu_avg,randseed=randseed,pseudo=pseudo,place_mu=place_mu,place_q=place_mu)        
+def initialize_rates(k,mu):
+    omega = []
+    phi = []
+    maxBin = 2*mu
+    for i in range(k):
+        o,p = (maxBin*(2*i+1)/2/k,1/k)
+        omega.append(o)
+        phi.append(p)
+    return multinomial(omega,phi)
+
+def MDCat(tree,k,sampling_time=None,bw_time=False,as_date=False,root_time=0,leaf_time=1,nrep=100,maxIter=100,randseed=None,pseudo=1,s=1000,verbose=False,place_mu=True,place_q=False,refTree=None,fixed_tau=False,fixed_omega=False,init_Q=None):
+    smpl_times = setup_smpl_time(tree,sampling_time=sampling_time,bw_time=bw_time,as_date=as_date,root_time=root_time,leaf_time=leaf_time)   
+    mu_avg = rtt_mu(tree,smpl_times)
+    init_rate_distr = initialize_rates(k,mu_avg) 
+    return EM_date_random_init(tree,smpl_times,init_rate_distr,s=s,nrep=nrep,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,fixed_omega=fixed_omega,verbose=verbose,mu_avg=mu_avg,randseed=randseed,pseudo=pseudo,place_mu=place_mu,place_q=place_q)        
 
 def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False):
     best_llh = -float("inf")
