@@ -8,8 +8,8 @@ Mai, Uyen, Eduardo Charvel, and Siavash Mirarab. "Expectation-Maximization enabl
 Data and some related scripts used in the paper can be found [here](https://github.com/uym2/MD-Cat-paper)
 
 ### Contact
-Uyen Mai
+Uyen Mai    
 um6916@princeton.edu
 
-Siavash Mirarab
+Siavash Mirarab   
 smirarab@ucsd.edu
