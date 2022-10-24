@@ -64,32 +64,32 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
         print("Solving EM with init point + " + str(r+1))
         print("Random seed: " + str(rseeds[r]))
         new_tree = read_tree_newick(tree.newick())
-        #try:
-        tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
-        convert_to_time(new_tree,tau,omega,phi,Q)
-        new_ref = new_tree
-        new_tree = read_tree_newick(tree.newick())
-        omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
-        phi_adjusted = [p for p in phi if p > 1e-6]
-        sum_phi = sum(phi_adjusted)
-        phi_adjusted = [p/sum_phi for p in phi_adjusted]
-        tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,init_Q=None,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
-        # convert branch length to time unit and compute mu for each branch
-        convert_to_time(new_tree,tau,omega,phi,Q)
-        # compute divergence times
-        compute_divergence_time(new_tree,smpl_times,place_mu=place_mu,place_q=place_q)
-        # output
-        if verbose:
-            print("New llh: " + str(llh))
-            print("New tree: " + new_tree.newick()) 
-            print("New omega: " + " ".join(str(round(x,nDIGITS)) for x in omega))
-        if llh > best_llh:
-            best_llh = llh  
-            best_tree = new_tree
-            best_phi = phi
-            best_omega = omega
-        #except:
-        #    print("Failed to optimize using this init point!")        
+        try:
+            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
+            convert_to_time(new_tree,tau,omega,phi,Q)
+            new_ref = new_tree
+            new_tree = read_tree_newick(tree.newick())
+            omega_adjusted = [o for o,p in zip(omega,phi) if p > 1e-6]
+            phi_adjusted = [p for p in phi if p > 1e-6]
+            sum_phi = sum(phi_adjusted)
+            phi_adjusted = [p/sum_phi for p in phi_adjusted]
+            tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,init_Q=None,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
+            # convert branch length to time unit and compute mu for each branch
+            convert_to_time(new_tree,tau,omega,phi,Q)
+            # compute divergence times
+            compute_divergence_time(new_tree,smpl_times,place_mu=place_mu,place_q=place_q)
+            # output
+            if verbose:
+                print("New llh: " + str(llh))
+                print("New tree: " + new_tree.newick()) 
+                print("New omega: " + " ".join(str(round(x,nDIGITS)) for x in omega))
+            if llh > best_llh:
+                best_llh = llh  
+                best_tree = new_tree
+                best_phi = phi
+                best_omega = omega
+        except:
+            print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
 def EM_date(tree,smpl_times,init_rate_distr,refTree=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,init_Q=None):

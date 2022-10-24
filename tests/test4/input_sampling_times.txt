@@ -16,7 +16,7 @@ Picramnia	140
 Crossosoma	140
 Terminalia	140
 Eucalyptus	140
-Myrtales	52.7
+Terminalia+Eucalyptus 52.7
 Pelargonium	140
 Itea	140
 Pterostemon	140
@@ -102,5 +102,5 @@ Nuphar	140
 Nymphaea	140
 Brasenia	140
 Trithuria	140
-Archaefructus	13.5
+Nuphar+Trithuria 13.5
 Amborella	140
