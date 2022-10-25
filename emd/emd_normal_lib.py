@@ -13,6 +13,7 @@ from simulator.multinomial import *
 import time
 import cvxpy as cp
 from scipy.sparse import csr_matrix
+import mosek
 
 EPS_tau=1e-3
 EPS_omg = 0.0001
@@ -88,6 +89,8 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
                 best_tree = new_tree
                 best_phi = phi
                 best_omega = omega
+        except mosek.Error:
+            raise Exception("Mosek license not found!")
         except:
             print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
