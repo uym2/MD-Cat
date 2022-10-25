@@ -15,8 +15,6 @@ MD-Cat has been tested on MacOS and Linux.
 
 You need to have:
 * Python >= 3.7
-* The proper Mosek license for your machine. 
-	* 	A free academic license can be obtained by visiting [Mosek website](https://www.mosek.com/products/academic-licenses/)
 
 ### Install from source code
 
