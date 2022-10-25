@@ -42,6 +42,5 @@ python3 md_cat.py -h
 to see the commandline help of MD-Cat.
 
 # Usage
-MD-Cat accepts calibration points (hard constraints on divergence times) for internal nodes, sampling times at leaf nodes, and a mixture of the two. Below we give examples for the three most common use-cases. 
-
-* All examples are given in the folder [tests](tests) of this repository.
+MD-Cat accepts calibration points (hard constraints on divergence times) for internal nodes, sampling times at leaf nodes, and a mixture of the two.
+All examples are given in the folder [tests](tests) of this repository.
