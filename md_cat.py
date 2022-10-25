@@ -23,7 +23,6 @@ parser.add_argument("--maxIter",required=False,help="The maximum number of itera
 parser.add_argument("--randSeed",required=False,help="Random seed; either a number or a list of p numbers where p is the number of replicates specified by -p. Default: auto-select")
 parser.add_argument("--annotate",required=False,help="Annotation option. Select one of these options: 1: Annotate divergent times; 2: Annotate divergent times and expected mutation rates; 3: Annotate divergent times, expected mutation rates, and the full posterior distribution of the mutation rate. Default: 2")
 
-
 args = vars(parser.parse_args())
 
 start = time.time()

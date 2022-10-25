@@ -13,7 +13,7 @@ param = {
     'include_package_data': True,
     'scripts' : ['md_cat.py','simulate.py'],
     'zip_safe': True,
-    'install_requires': ['treeswift','scipy>=1.3.1','bitsets','numpy>=1.18.5','jenkspy','mosek','cvxpy'],
+    'install_requires': ['treeswift','scipy>=1.3.1','bitsets','numpy>=1.18.5','jenkspy','mosek','cvxpy','cvxopt'],
     'keywords': 'Phylogenetics Evolution Biology',
     'long_description': """A Python implementation of the MD-Cat algorithm""",
     'classifiers': ["Environment :: Console",
