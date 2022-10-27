@@ -1,0 +1,15 @@
+Fagales 95.1
+Myrtales=Terminalia+Eucalyptus 87.3
+Archaefructus=Nuphar+Trithuria 126.5
+Aquifoliaceae 66.5
+Cornales 87.3
+Sapindopsis 107.3
+Tricolpites 126.5
+Typhaceae 61.0683
+Arecales 87
+Araceae 113.5
+Walkerpollis 126.5
+Mauldinia 101.1
+Virginianthus 107.3
+Endressinia 115.5
+Anacostia 126.5

@@ -18,10 +18,8 @@ parser.add_argument("-f","--leafTime",required=False,help="Divergence time at le
 parser.add_argument("-b","--backward",action='store_true',help="Use backward time and enforce ultrametricity. This option is useful for fossil calibrations with present-time sequences. Default: NO") 
 parser.add_argument("-d","--asDate",action='store_true',help="Read and write divergence times as date format (YYY-mm-dd). If it is used, the output tree has branch lengths in days and divergence times shown as date (YYYY-mm-dd). Note: this option cannot be used with -b and will override -b if both are used. Default: FALSE")
 parser.add_argument("-o","--output",required=False,help="The output trees with branch lengths in time unit. Default: [input].emDate")
-#parser.add_argument("-j","--clockout",required=False,help="Write down the estimated clock parameters (omega and phi) to this file. Default: [input].clock")
 parser.add_argument("-p","--rep",required=False, help="The number of random replicates for initialization. Default: 100")
 parser.add_argument("-l","--seqLen",required=False, help="The length of the sequences. Default: 1000")
-parser.add_argument("--clockFile",required=False,help="A file that defines a customized (discretized) clock model. Will override --bins")
 parser.add_argument("-v","--verbose",action='store_true',help="Verbose")
 parser.add_argument("--maxIter",required=False,help="The maximum number of iterations for EM search. Default: 100")
 parser.add_argument("--randSeed",required=False,help="Random seed; either a number or a list of p numbers where p is the number of replicates specified by -p. Default: auto-select")
@@ -83,6 +81,3 @@ best_tree.write_tree_newick(outtreeFile)
 print("Best log-likelihood: " + str(best_llh))       
 end = time.time()
 print("Runtime: ", end - start)
-#with open(infoFile,'w') as finfo:
-#    for (o,p) in zip(best_omega,best_phi):
-#        finfo.write(str(o) + " " + str(p) + "\n")
