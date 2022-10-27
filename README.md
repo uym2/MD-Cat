@@ -160,7 +160,7 @@ We give an example of the LCA specification in `use_cases/fossil_backward_time`.
    cd use_cases/fossil_backward_time
 ```
 
-Because the input tree ```input.nwk``` does not have labels for internal nodes, we need to use LCA to specify calibration points. Here we use 4 calibration points in ```input.txt```:
+Because the input tree ```input.nwk``` does not have labels for all the internal nodes, we need to use LCA to specify some of the calibration points. Here we use 4 calibration points in ```input.txt```:
 
 ```
 Fagales 95.1
