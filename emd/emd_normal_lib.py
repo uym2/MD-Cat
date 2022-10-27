@@ -6,7 +6,7 @@ from tempfile import mkdtemp
 from shutil import copyfile, rmtree
 from os import remove
 from emd.lca_lib import find_LCAs
-from emd.util import bitset_from_tree, bitset_index,date_to_days, days_to_date
+from emd.util import bitset_from_tree, bitset_index,date_to_years, years_to_date
 from emd.rtt_lib import rtt_mu 
 from random import seed,uniform, random, randrange
 from simulator.multinomial import *
@@ -39,9 +39,9 @@ def MDCat(tree,k,sampling_time=None,bw_time=False,as_date=False,root_time=0,leaf
     smpl_times = setup_smpl_time(tree,sampling_time=sampling_time,bw_time=bw_time,as_date=as_date,root_time=root_time,leaf_time=leaf_time)   
     mu_avg = rtt_mu(tree,smpl_times)
     init_rate_distr = initialize_rates(k,mu_avg) 
-    return EM_date_random_init(tree,smpl_times,init_rate_distr,s=s,nrep=nrep,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,fixed_omega=fixed_omega,verbose=verbose,mu_avg=mu_avg,randseed=randseed,pseudo=pseudo,place_mu=place_mu,place_q=place_q)        
+    return EM_date_random_init(tree,smpl_times,init_rate_distr,s=s,nrep=nrep,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,fixed_omega=fixed_omega,verbose=verbose,mu_avg=mu_avg,randseed=randseed,pseudo=pseudo,place_mu=place_mu,place_q=place_q,as_date=as_date,bw_time=bw_time)        
 
-def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False):
+def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False,as_date=False,bw_time=False):
     best_llh = -float("inf")
     best_tree = None
     best_phi = None
@@ -78,7 +78,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
         # convert branch length to time unit and compute mu for each branch
         convert_to_time(new_tree,tau,omega,phi,Q)
         # compute divergence times
-        compute_divergence_time(new_tree,smpl_times,place_mu=place_mu,place_q=place_q)
+        compute_divergence_time(new_tree,smpl_times,place_mu=place_mu,place_q=place_q,as_date=as_date,bw_time=bw_time)
         # output
         if verbose:
             print("New llh: " + str(llh))
@@ -190,7 +190,7 @@ def compute_divergence_time(tree,sampling_time,bw_time=False,as_date=False,place
         lb = node.get_label()
         assert node.time is not None, "Failed to compute divergence time for node " + lb
         if as_date:
-            divTime = days_to_date(node.time)
+            divTime = years_to_date(node.time)
         else:
             divTime = str(round(node.time,nDIGITS)) if not bw_time else str(-round(node.time,nDIGITS))
         tag = "[t=" + divTime    
@@ -279,7 +279,7 @@ def setup_smpl_time(tree,sampling_time=None,bw_time=False,as_date=False,root_tim
                 q = spl[0]    
             q = q.split('+')
             if as_date:
-                t = date_to_days(t)
+                t = date_to_years(t)
             else:    
                 t = float(t) if not bw_time else -float(t)
             queries.append(q)
@@ -306,7 +306,7 @@ def setup_smpl_time(tree,sampling_time=None,bw_time=False,as_date=False,root_tim
                 calibID += 1
             else:
                 lb = node.label    
-        smpl_times[lb] = time       
+        smpl_times[lb] = time      
     return smpl_times   
 
 def setup_constr(tree,smpl_times,s,eps_tau=EPS_tau,pseudo=0):
@@ -727,7 +727,10 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,var_apprx=False,
 
     solver_map = {'mosek':cp.MOSEK,'osqp':cp.OSQP,'cvxopt':cp.CVXOPT,'ecos':cp.ECOS}
     for solver in solvers:
-        f_star = prob.solve(verbose=False,solver=solver_map[solver])
+        try:    
+            f_star = prob.solve(verbose=False,solver=solver_map[solver])
+        except:
+            continue    
         if prob.status == "optimal":
             break
     tau_star = var_tau.value

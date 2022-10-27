@@ -3,6 +3,15 @@ from treeswift import *
 import re
 from datetime import datetime,timedelta
 
+# convert date (YYYY-MM-DD or YYYY-MM) to years since Jan 1, 2019
+def date_to_years(sample_time):
+    return date_to_days(sample_time)/365
+
+# convert years since Jan 1, 2019 to date (YYYY-MM-DD)
+def years_to_date(years):
+    days = years*365
+    return (datetime(2019,1,1) + timedelta(days=days)).strftime('%Y-%m-%d')
+
 # convert date (YYYY-MM-DD or YYYY-MM) to days since Jan 1, 2019
 def date_to_days(sample_time):
     try:
