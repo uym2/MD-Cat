@@ -368,6 +368,7 @@ def log_sum_exp(numlist):
     s = sum(exp(x-minx) for x in numlist if x-maxx > MIN_ll)
     result = minx + log(s)  if s > 0 else log(len(numlist)) + MIN_ll
     return result
+    #return maxx + sum(exp(x-maxx) for x in numlist)
 
 #def log_sum_exp(numlist):
     # using log-trick to compute log(sum(exp(x) for x in numlist))
@@ -392,7 +393,7 @@ def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau,var_apprx=True):
             lq_i[j] += (-(b_i-omega_j*tau_i)**2/2/var_ij + log(phi_j) - log(var_ij)/2)
         s_lqi = log_sum_exp(lq_i)
         q_i = [exp(x-s_lqi) for x in lq_i]
-        q_i = [x if x>MIN_q else 0 for x in q_i]
+        #q_i = [x if x>MIN_q else 0 for x in q_i]
         s_qi = sum(q_i)
         if s_qi < 1e-10:
             q_i = [1.0/k]*k
