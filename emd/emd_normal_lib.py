@@ -10,6 +10,7 @@ from emd.util import bitset_from_tree, bitset_index,date_to_years, years_to_date
 from emd.rtt_lib import rtt_mu 
 from random import seed,uniform, random, randrange
 from simulator.multinomial import *
+from scipy.stats import norm
 import time
 import cvxpy as cp
 from scipy.sparse import csr_matrix
@@ -35,13 +36,13 @@ def initialize_rates(k,mu):
         phi.append(p)
     return multinomial(omega,phi)
 
-def MDCat(tree,k,sampling_time=None,bw_time=False,as_date=False,root_time=0,leaf_time=1,nrep=100,maxIter=100,randseed=None,pseudo=1,s=1000,verbose=False,place_mu=True,place_q=False,refTree=None,fixed_tau=False,fixed_omega=False,init_Q=None):
+def MDCat(tree,k,sampling_time=None,bw_time=False,as_date=False,root_time=0,leaf_time=1,nrep=100,maxIter=100,randseed=None,pseudo=1,s=1000,verbose=False,place_mu=True,place_q=False,refTree=None,fixed_tau=False,fixed_omega=False,init_Q=None,CI_options=None):
     smpl_times = setup_smpl_time(tree,sampling_time=sampling_time,bw_time=bw_time,as_date=as_date,root_time=root_time,leaf_time=leaf_time)   
     mu_avg = rtt_mu(tree,smpl_times)
     init_rate_distr = initialize_rates(k,mu_avg) 
-    return EM_date_random_init(tree,smpl_times,init_rate_distr,s=s,nrep=nrep,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,fixed_omega=fixed_omega,verbose=verbose,mu_avg=mu_avg,randseed=randseed,pseudo=pseudo,place_mu=place_mu,place_q=place_q,as_date=as_date,bw_time=bw_time)        
+    return EM_date_random_init(tree,smpl_times,init_rate_distr,s=s,nrep=nrep,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,fixed_omega=fixed_omega,verbose=verbose,mu_avg=mu_avg,randseed=randseed,pseudo=pseudo,place_mu=place_mu,place_q=place_q,as_date=as_date,bw_time=bw_time,CI_options=CI_options)        
 
-def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False,as_date=False,bw_time=False):
+def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False,as_date=False,bw_time=False,CI_options=None):
     best_llh = -float("inf")
     best_tree = None
     best_phi = None
@@ -66,7 +67,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
         print("Random seed: " + str(rseeds[r]))
         new_tree = read_tree_newick(tree.newick())
         #try:
-        tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
+        tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo,CI_options=None)
         convert_to_time(new_tree,tau,omega,phi,Q)
         new_ref = new_tree
         new_tree = read_tree_newick(tree.newick())
@@ -74,11 +75,17 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
         phi_adjusted = [p for p in phi if p > 1e-6]
         sum_phi = sum(phi_adjusted)
         phi_adjusted = [p/sum_phi for p in phi_adjusted]
-        tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,init_Q=None,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
-        # convert branch length to time unit and compute mu for each branch
+        tau,omega,phi,llh,Q = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,init_Q=None,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo,CI_options=CI_options) 
+        #convert branch length to time unit and compute mu for each branch
         convert_to_time(new_tree,tau,omega,phi,Q)
         # compute divergence times
         compute_divergence_time(new_tree,smpl_times,place_mu=place_mu,place_q=place_q,as_date=as_date,bw_time=bw_time)
+        # place confidence intervals
+        for node in new_tree.traverse_preorder():
+            if not node.is_root():
+                _,tau_lower,_,tau_upper = node.tau_CI
+                node.edge_length = str(node.edge_length) + "[" + str(tau_lower) + "," + str(tau_upper) + "]"
+                #print(node.edge_length,tau_lower,tau_upper)
         # output
         if verbose:
             print("New llh: " + str(llh))
@@ -95,7 +102,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
         #    print("Failed to optimize using this init point!")        
     return best_tree,best_llh,best_phi,best_omega        
 
-def EM_date(tree,smpl_times,init_rate_distr,refTree=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,init_Q=None):
+def EM_date(tree,smpl_times,init_rate_distr,refTree=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,init_Q=None,CI_options=None):
     M, dt, b = setup_constr(tree,smpl_times,s,eps_tau=eps_tau,pseudo=pseudo)
     Q, tau, phi, omega = init_EM(tree,b,init_rate_distr,s=s,refTree=refTree,init_Q=init_Q)
     if verbose:
@@ -125,6 +132,9 @@ def EM_date(tree,smpl_times,init_rate_distr,refTree=None,s=1000,df=5e-4,maxIter=
         if verbose:    
             print("Estep ...")
         Q = run_Estep(b,s,omega,tau,phi,var_apprx=True)
+    
+    if CI_options is not None:    
+        tau_boots = get_confidence_interval(tree,smpl_times,omega,Q,np.array(b),s,M,dt,CI_options,eps_tau=EPS_tau)
 
     return tau,omega,phi,llh,Q
 
@@ -356,26 +366,26 @@ def setup_constr(tree,smpl_times,s,eps_tau=EPS_tau,pseudo=0):
                 node.t = child0.t
     return M,dt,b
 
+#def log_sum_exp(numlist):
+    # using log-trick to compute log(sum(exp(x) for x in numlist))
+    # mitigate the problem of underflow
+#    maxx = max(numlist)
+#    try:
+#        minx = min([x for x in numlist if x-maxx > MIN_ll])
+#    except:
+#        return log(len(numlist)) + MIN_ll
+    #print(min(numlist),max(numlist)) #,exp(max(numlist)-min(numlist)))
+#    s = sum(exp(x-minx) for x in numlist if x-maxx > MIN_ll)
+#    result = minx + log(s)  if s > 0 else log(len(numlist)) + MIN_ll
+#    return result
+
 def log_sum_exp(numlist):
     # using log-trick to compute log(sum(exp(x) for x in numlist))
     # mitigate the problem of underflow
     maxx = max(numlist)
-    try:
-        minx = min([x for x in numlist if x-maxx > MIN_ll])
-    except:
-        return log(len(numlist)) + MIN_ll
-    #print(min(numlist),max(numlist)) #,exp(max(numlist)-min(numlist)))
-    s = sum(exp(x-minx) for x in numlist if x-maxx > MIN_ll)
-    result = minx + log(s)  if s > 0 else log(len(numlist)) + MIN_ll
+    s = sum(exp(x-maxx) for x in numlist)
+    result = maxx + log(s)
     return result
-
-#def log_sum_exp(numlist):
-    # using log-trick to compute log(sum(exp(x) for x in numlist))
-    # mitigate the problem of underflow
-#    minx = max(MIN_ll,min(numlist))
-#    s = sum(exp(x-minx) for x in numlist)
-#    result = minx + log(s)  if s > 0 else log(len(numlist)) + MIN_ll
-#    return result
 
 def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau,var_apprx=True):
     N = len(b)
@@ -736,3 +746,49 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,var_apprx=False,
     tau_star = var_tau.value
 
     return tau_star
+
+def compute_CI(a_list,p_lower=0.025,p_upper=0.975):
+    s_list = sorted(a_list)
+    N = len(s_list)
+    idx_lower = floor(p_lower*N)
+    idx_higher = ceil(p_upper*N)-1
+    return s_list[idx_lower],s_list[idx_higher]
+
+def get_confidence_interval(tree,smpl_times,omega,Q,b,s,M,dt,CI_options,eps_tau=EPS_tau):
+    nboots = CI_options['nboots']
+    p_lower = CI_options['p_lower']
+    p_upper = CI_options['p_upper']
+    N = len(b)
+    k = len(omega)
+    mu_boots = [np.zeros(N) for i in range(nboots)]
+    b_boots = [np.zeros(N) for i in range(nboots)]
+    tau_boots = [np.zeros(N) for i in range(nboots)]
+    for node in tree.traverse_postorder():
+        if node.is_root():
+            continue
+        phi = Q[node.idx]
+        #phi = [1/k]*k
+        R = multinomial(omega,phi)  
+        for i in range(nboots):            
+            mu_boots[i][node.idx] = R.randomize()
+            b_boots[i][node.idx] = norm.rvs(b[node.idx],sqrt(b[node.idx]/s))
+            tau_boots[i][node.idx] = max(EPS_tau,b_boots[i][node.idx]/mu_boots[i][node.idx])
+
+    #tau_boots = [[]]*nboots
+    #for i in range(nboots):
+        #mu = mu_boots[i]
+        #bb = b_boots[i]
+        #var_tau = cp.Variable(N)
+        #objective = cp.Minimize((s/b).T @ (bb-mu.T @ var_tau)**2)
+        #constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
+        #prob = cp.Problem(objective,constraints)
+        #f_star = prob.solve(verbose=False,solver=cp.MOSEK)
+        #tau_boots[i] = var_tau.value
+
+    for node in tree.traverse_postorder():
+        if node.is_root():
+            continue
+        tau_list = [tau_boots[i][node.idx] for i in range(nboots)]
+        tau_lower,tau_upper = compute_CI(tau_list,p_lower=p_lower,p_upper=p_upper)
+        node.tau_CI = (p_lower,tau_lower,p_upper,tau_upper)
+    return tau_boots    
