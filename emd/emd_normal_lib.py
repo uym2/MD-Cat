@@ -402,7 +402,7 @@ def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau,var_apprx=True):
             lq_i[j] += (-(b_i-omega_j*tau_i)**2/2/var_ij + log(phi_j) - log(var_ij)/2)
         s_lqi = log_sum_exp(lq_i)
         q_i = [exp(x-s_lqi) for x in lq_i]
-        q_i = [x if x>MIN_q else 0 for x in q_i]
+        q_i = [x if x>MIN_q else MIN_q for x in q_i]
         s_qi = sum(q_i)
         if s_qi < 1e-10:
             q_i = [1.0/k]*k
@@ -729,8 +729,14 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,var_apprx=False,
           
     P = np.diag(Pd)        
     var_tau = cp.Variable(N)
-       
-    objective = cp.Minimize(cp.quad_form(var_tau,P) + q.T @ var_tau)
+    
+    try:
+        objective = cp.Minimize(cp.quad_form(var_tau,P) + q.T @ var_tau)
+    except:
+        print("Pd",Pd)
+        print("omega",omega)
+        #print("Q",Q)
+        return None    
     upper_bound = np.array([float("inf") if b_i is not None else 1.0/6 for b_i in b])
     constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
     prob = cp.Problem(objective,constraints)
