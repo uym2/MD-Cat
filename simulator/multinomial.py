@@ -6,10 +6,8 @@ import jenkspy
 def cdf_from_pdf(p):
     c = [0]*len(p)
     c[0] = p[0]
-
     for i in range(1,len(p)):
         c[i] = c[i-1] + p[i]
-
     return c
 
 def binary_search(arr,v,start=0,end=None):
@@ -29,9 +27,14 @@ def binary_search(arr,v,start=0,end=None):
 class multinomial:
     def __init__(self,omega,phi):
         # omega stores the values, phi stores the probability
-        self.omega = omega
-        self.phi = phi
+        S = sorted(zip(omega,phi))
+        self.omega = [x[0] for x in S]
+        self.phi = [x[1] for x in S]
         self.acc = cdf_from_pdf(phi) # accumulative density        
+
+    def get_quantize(self,q):
+        i = binary_search(self.acc,q)
+        return self.omega[i]
     
     def randomize(self):
         r = random()
