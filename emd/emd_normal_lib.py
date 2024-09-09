@@ -818,38 +818,33 @@ def get_confidence_interval(tree,smpl_times,tau,omega,Q,b,s,M,dt,CI_options,eps_
     divTime_boots = [np.zeros(N+1) for i in range(nboots)]
     i = 0
     while i < nboots:
-        #try:
-        for node in tree.traverse_postorder():
-            if node.is_root():
-                continue
-            #phi = Q[node.idx]
-            phi = [1/k]*k
-            R = multinomial(omega,phi)
-            mu_boots[i][node.idx] = R.randomize() 
-            #b_boots[i][node.idx] = max(EPS_tau*EPS_omg,norm.rvs(mu_avg[node.idx]*tau[node.idx],sqrt(mu_avg[node.idx]*tau[node.idx]/s)))
-            #b_boots[i][node.idx] = norm.rvs(b[node.idx],sqrt(b[node.idx]/s))
-            b_boots[i][node.idx] = b[node.idx]
-        mu = mu_boots[i]
-        bb = b_boots[i]
-        var_tau = cp.Variable(N)
-        #W = np.diag([sqrt(s/(m*t)) for m,t in zip(mu_avg,tau)])
-        W = np.diag([sqrt(s/x) for x in bb])
-        objective = cp.Minimize(cp.sum_squares( W @ (bb-np.diag(mu) @ var_tau)))
-        #objective = cp.Minimize(cp.sum_squares((bb-np.diag(mu) @ var_tau)))
-        constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
-        prob = cp.Problem(objective,constraints)
-        f_star = prob.solve(verbose=False,solver=cp.MOSEK)
-        tau_boots[i] = var_tau.value
-        # compute divergence time
-        for node in tree.traverse_postorder():
-            if not node.is_root():
-                node.edge_length = tau_boots[i][node.idx]
-        compute_divergence_time(tree,smpl_times)
-        for node in tree.traverse_postorder():
-            divTime_boots[i][node.idx] = node.time
-        i = i+1    
-        #except:
-        #    print("Failed to get estimate on this bootstrap. Retrying...")        
+        try:
+            for node in tree.traverse_postorder():
+                if node.is_root():
+                    continue
+                phi = [1/k]*k
+                R = multinomial(omega,phi)
+                mu_boots[i][node.idx] = R.randomize() 
+                b_boots[i][node.idx] = b[node.idx]
+            mu = mu_boots[i]
+            bb = b_boots[i]
+            var_tau = cp.Variable(N)
+            W = np.diag([sqrt(s/x) for x in bb])
+            objective = cp.Minimize(cp.sum_squares( W @ (bb-np.diag(mu) @ var_tau)))
+            constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
+            prob = cp.Problem(objective,constraints)
+            f_star = prob.solve(verbose=False,solver=cp.MOSEK)
+            tau_boots[i] = var_tau.value
+            # compute divergence time
+            for node in tree.traverse_postorder():
+                if not node.is_root():
+                    node.edge_length = tau_boots[i][node.idx]
+            compute_divergence_time(tree,smpl_times)
+            for node in tree.traverse_postorder():
+                divTime_boots[i][node.idx] = node.time
+            i = i+1    
+        except:
+            continue
 
     for node in tree.traverse_postorder():
         divTime_list = [divTime_boots[i][node.idx] for i in range(nboots)]
