@@ -1,12 +1,19 @@
 #! /usr/bin/env python
 
-from emd.emd_normal_lib import *
-from treeswift import *
 import argparse
-from simulator.multinomial import *
 import sys
 import time
-from emd.util import date_to_years
+import os
+
+def positive_int(value):
+    try:
+        count = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    if count < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return count
+
 
 parser = argparse.ArgumentParser()
 
@@ -27,7 +34,21 @@ parser.add_argument("--CI",required=False,help="Turn on confidence interval esti
 parser.add_argument("--randSeed",required=False,help="Random seed; either a number or a list of p numbers where p is the number of replicates specified by -p. Default: auto-select")
 parser.add_argument("--annotate",required=False,help="Annotation option. Select one of these options: 1: Annotate divergent times; 2: Annotate divergent times and expected mutation rates; 3: Annotate divergent times, expected mutation rates, and the full posterior distribution of the mutation rate. Default: 2")
 
+parser.add_argument("--threads", "--cores", type=positive_int, metavar="N",
+                    help="Maximum threads for MOSEK and numerical libraries. Must be positive. Default: library defaults. Replicates remain sequential.")
+
 args = vars(parser.parse_args())
+
+# Set limits before importing NumPy/SciPy or any solver libraries.
+if args["threads"] is not None:
+    for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+                     "BLIS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+        os.environ[variable] = str(args["threads"])
+
+from emd.emd_normal_lib import *
+from treeswift import *
+from simulator.multinomial import *
+from emd.util import date_to_years
 
 start = time.time()
 print("EMDate was called as follow: " + " ".join(sys.argv))
@@ -88,7 +109,7 @@ if args["CI"] is not None:
     #p_upper = 1-p_lower
     CI_options = {'nboots':nboots,'p_lower':p_lower,'p_upper':p_upper}
 
-best_tree,best_llh,best_phi,best_omega = MDCat(tree,k,sampling_time=timeFile,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=None,fixed_tau=False,fixed_omega=False,verbose=args["verbose"],pseudo=1,randseed=randseed,place_mu=place_mu,place_q=place_q,init_Q=None,root_time=tR,leaf_time=tL,bw_time=bw_time,as_date=as_date,CI_options=CI_options)                 
+best_tree,best_llh,best_phi,best_omega = MDCat(tree,k,sampling_time=timeFile,s=seqLen,nrep=nreps,maxIter=maxIter,refTree=None,fixed_tau=False,fixed_omega=False,verbose=args["verbose"],pseudo=1,randseed=randseed,place_mu=place_mu,place_q=place_q,init_Q=None,root_time=tR,leaf_time=tL,bw_time=bw_time,as_date=as_date,CI_options=CI_options,threads=args["threads"])
 best_tree.write_tree_newick(outtreeFile)
 print("Best log-likelihood: " + str(best_llh))       
 end = time.time()

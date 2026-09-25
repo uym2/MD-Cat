@@ -1,5 +1,8 @@
 **/Explore
 **/Tests
+!/tests/
+/tests/*
+!/tests/test_threads.py
 *.tre
 *temp*
 *.pyc

@@ -183,6 +183,23 @@ The output tree ```output.nwk``` is ultrametric, has branch lengths in time unit
 * The output tree has internal node labels the same as the input tree, except for the two calibration points "Myrtales" and "Archaefructus" assigned by user via `input.txt`.
 
 
+# Controlling CPU usage
+
+Use `--threads N` (or `--cores N`) to limit numerical-library and MOSEK solver
+threads, including confidence-interval estimation:
+
+```bash
+python md_cat.py -i input.nwk -o output.nwk --threads 2
+```
+
+The count must be a positive integer. If omitted, MD-Cat keeps the existing
+library defaults and environment settings. An explicit count overrides
+`OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `BLIS_NUM_THREADS`,
+and `VECLIB_MAXIMUM_THREADS` before numerical libraries are imported, and sets
+MOSEK's `MSK_IPAR_NUM_THREADS` parameter for each solve. This controls library
+thread limits, not CPU affinity or a process-wide CPU quota. Initialization
+replicates still run sequentially; `-p` controls the number of replicates.
+
 # Other useful options
 
 The following options are useful to explore:

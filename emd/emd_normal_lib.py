@@ -36,13 +36,13 @@ def initialize_rates(k,mu):
         phi.append(p)
     return multinomial(omega,phi)
 
-def MDCat(tree,k,sampling_time=None,bw_time=False,as_date=False,root_time=0,leaf_time=1,nrep=100,maxIter=100,randseed=None,pseudo=1,s=1000,verbose=False,place_mu=True,place_q=False,refTree=None,fixed_tau=False,fixed_omega=False,init_Q=None,CI_options=None):
+def MDCat(tree,k,sampling_time=None,bw_time=False,as_date=False,root_time=0,leaf_time=1,nrep=100,maxIter=100,randseed=None,pseudo=1,s=1000,verbose=False,place_mu=True,place_q=False,refTree=None,fixed_tau=False,fixed_omega=False,init_Q=None,CI_options=None,threads=None):
     smpl_times = setup_smpl_time(tree,sampling_time=sampling_time,bw_time=bw_time,as_date=as_date,root_time=root_time,leaf_time=leaf_time)   
     mu_avg = rtt_mu(tree,smpl_times)
     init_rate_distr = initialize_rates(k,mu_avg) 
-    return EM_date_random_init(tree,smpl_times,init_rate_distr,s=s,nrep=nrep,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,fixed_omega=fixed_omega,verbose=verbose,mu_avg=mu_avg,randseed=randseed,pseudo=pseudo,place_mu=place_mu,place_q=place_q,as_date=as_date,bw_time=bw_time,CI_options=CI_options)        
+    return EM_date_random_init(tree,smpl_times,init_rate_distr,s=s,nrep=nrep,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,fixed_omega=fixed_omega,verbose=verbose,mu_avg=mu_avg,randseed=randseed,pseudo=pseudo,place_mu=place_mu,place_q=place_q,as_date=as_date,bw_time=bw_time,CI_options=CI_options,threads=threads)
 
-def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False,as_date=False,bw_time=False,CI_options=None):
+def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=100,refTree=None,init_Q=None,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,randseed=None,pseudo=0,place_mu=True,place_q=False,as_date=False,bw_time=False,CI_options=None,threads=None):
     best_llh = -float("inf")
     best_tree = None
     best_phi = None
@@ -67,7 +67,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
         print("Random seed: " + str(rseeds[r]))
         new_tree = read_tree_newick(tree.newick())
         #try:
-        ans,constr = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo)
+        ans,constr = EM_date(new_tree,smpl_times,init_rate_distr,s=s,maxIter=maxIter,refTree=refTree,init_Q=init_Q,fixed_tau=fixed_tau,verbose=verbose,mu_avg=mu_avg,fixed_omega=fixed_omega,pseudo=pseudo,threads=threads)
         tau,omega,phi,llh,Q = ans['tau'],ans['omega'],ans['phi'],ans['llh'],ans['Q']
         convert_to_time(new_tree,tau,omega,phi,Q)
         new_ref = new_tree
@@ -76,7 +76,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
         phi_adjusted = [p for p in phi if p > 1e-6]
         sum_phi = sum(phi_adjusted)
         phi_adjusted = [p/sum_phi for p in phi_adjusted]
-        ans,constr = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,init_Q=None,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo) 
+        ans,constr = EM_date(new_tree,smpl_times,s=s,init_rate_distr=multinomial(omega_adjusted,phi_adjusted),maxIter=maxIter,refTree=new_ref,init_Q=None,fixed_tau=fixed_tau,verbose=verbose,mu_avg=None,fixed_omega=fixed_omega,pseudo=pseudo,threads=threads)
         tau,omega,phi,llh,Q = ans['tau'],ans['omega'],ans['phi'],ans['llh'],ans['Q']
         #convert branch length to time unit and compute mu for each branch
         convert_to_time(new_tree,tau,omega,phi,Q)
@@ -103,7 +103,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
     # place confidence intervals
     if CI_options is not None:    
         b,M,dt = constr['b'],constr['M'],constr['dt']
-        get_confidence_interval(best_tree,smpl_times,best_tau,best_omega,best_Q,np.array(b),s,M,dt,CI_options,eps_tau=EPS_tau)
+        get_confidence_interval(best_tree,smpl_times,best_tau,best_omega,best_Q,np.array(b),s,M,dt,CI_options,eps_tau=EPS_tau,threads=threads)
         convert_to_time(best_tree,best_tau,best_omega,best_phi,best_Q)
         compute_divergence_time(best_tree,smpl_times)
         annotate_divergence_time(best_tree,place_mu=place_mu,place_q=place_q,as_date=as_date,bw_time=bw_time)
@@ -113,7 +113,7 @@ def EM_date_random_init(tree,smpl_times,init_rate_distr,s=1000,nrep=100,maxIter=
                 node.edge_length = str(node.edge_length) + "[" + str(tau_lower) + "," + str(tau_upper) + "]"
     return best_tree,best_llh,best_phi,best_omega        
 
-def EM_date(tree,smpl_times,init_rate_distr,refTree=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,init_Q=None):
+def EM_date(tree,smpl_times,init_rate_distr,refTree=None,s=1000,df=5e-4,maxIter=100,eps_tau=EPS_tau,fixed_tau=False,verbose=False,mu_avg=None,fixed_omega=False,pseudo=0,init_Q=None,threads=None):
     M, dt, b = setup_constr(tree,smpl_times,s,eps_tau=eps_tau,pseudo=pseudo)
     Q, tau, phi, omega = init_EM(tree,b,init_rate_distr,s=s,refTree=refTree,init_Q=init_Q)
     if verbose:
@@ -128,7 +128,7 @@ def EM_date(tree,smpl_times,init_rate_distr,refTree=None,s=1000,df=5e-4,maxIter=
             print("EM iteration " + str(i))
         if verbose:
             print("Mstep ...")   
-        next_tau,next_omega = run_Mstep(tree,smpl_times,b,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_tau=fixed_tau,fixed_omega=fixed_omega,mu_avg=mu_avg)
+        next_tau,next_omega = run_Mstep(tree,smpl_times,b,s,omega,tau,phi,Q,M,dt,eps_tau=eps_tau,fixed_tau=fixed_tau,fixed_omega=fixed_omega,mu_avg=mu_avg,threads=threads)
         llh = f_ll(b,s,next_tau,next_omega,phi,var_apprx=True)
         if verbose:
             print("Current llh: " + str(llh))
@@ -441,10 +441,10 @@ def run_Estep(b,s,omega,tau,phi,p_eps=EPS_tau,var_apprx=True):
         Q.append(q_i)
     return Q
 
-def run_Mstep(tree,smplTimes,b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_tau=False,fixed_omega=False,mu_avg=None):
+def run_Mstep(tree,smplTimes,b,s,omega,tau,phi,Q,M,dt,eps_tau=EPS_tau,fixed_tau=False,fixed_omega=False,mu_avg=None,threads=None):
     for i in range(100):
         #tau_star = compute_tau_star(tree,smplTimes,omega,Q,b,s,M,dt,eps_tau=eps_tau) if not fixed_tau else tau
-        tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=eps_tau,var_apprx=True) if not fixed_tau else tau
+        tau_star = compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=eps_tau,var_apprx=True,threads=threads) if not fixed_tau else tau
         omega_star = compute_omega_star(tau_star,Q,b,phi,mu_avg=mu_avg) if not fixed_omega else omega
         if omega is not None and sqrt(sum([(x-y)**2 for (x,y) in zip(omega,omega_star)])/len(omega)) < 1e-5:
             break
@@ -740,7 +740,7 @@ def compute_f_MM(tau,omega,Q,b,s,var_apprx=True):
             F += s*Q[i][j]*(b[i]-omega[j]*tau[i])**2/w_ij + Q[i][j]*log(w_ij)       
     return F
 
-def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,var_apprx=False,solvers=['mosek','osqp','cvxopt','ecos']):
+def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,var_apprx=False,solvers=['mosek','osqp','cvxopt','ecos'],threads=None):
     N = len(b)
     k = len(omega)
     Pd = np.zeros(N)
@@ -774,7 +774,8 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,var_apprx=False,
     solver_map = {'mosek':cp.MOSEK,'osqp':cp.OSQP,'cvxopt':cp.CVXOPT,'ecos':cp.ECOS}
     for solver in solvers:
         try:    
-            f_star = prob.solve(verbose=False,solver=solver_map[solver])
+            options = {"mosek_params": {"MSK_IPAR_NUM_THREADS": threads}} if solver == 'mosek' and threads is not None else {}
+            f_star = prob.solve(verbose=False,solver=solver_map[solver],**options)
         except:
             continue    
         if prob.status == "optimal":
@@ -790,7 +791,7 @@ def compute_CI(a_list,p_lower=0.025,p_upper=0.975):
     idx_higher = ceil(p_upper*N)-1
     return s_list[idx_lower],s_list[idx_higher]
 
-def get_confidence_interval(tree,smpl_times,tau,omega,Q,b,s,M,dt,CI_options,eps_tau=EPS_tau):
+def get_confidence_interval(tree,smpl_times,tau,omega,Q,b,s,M,dt,CI_options,eps_tau=EPS_tau,threads=None):
     nboots = CI_options['nboots']
     p_lower = CI_options['p_lower']
     p_upper = CI_options['p_upper']
@@ -833,7 +834,8 @@ def get_confidence_interval(tree,smpl_times,tau,omega,Q,b,s,M,dt,CI_options,eps_
             objective = cp.Minimize(cp.sum_squares( W @ (bb-np.diag(mu) @ var_tau)))
             constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
             prob = cp.Problem(objective,constraints)
-            f_star = prob.solve(verbose=False,solver=cp.MOSEK)
+            options = {"mosek_params": {"MSK_IPAR_NUM_THREADS": threads}} if threads is not None else {}
+            f_star = prob.solve(verbose=False,solver=cp.MOSEK,**options)
             tau_boots[i] = var_tau.value
             # compute divergence time
             for node in tree.traverse_postorder():
