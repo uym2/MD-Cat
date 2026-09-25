@@ -839,36 +839,51 @@ def get_confidence_interval(tree,smpl_times,tau,omega,Q,b,s,M,dt,CI_options,eps_
             #tau_boots[i][node.idx] = max(EPS_tau,b_boots[i][node.idx]/mu_boots[i][node.idx])
 
     divTime_boots = [np.zeros(N+1) for i in range(nboots)]
-    i = 0
-    while i < nboots:
-        try:
-            for node in tree.traverse_postorder():
-                if node.is_root():
-                    continue
-                phi = [1/k]*k
-                R = multinomial(omega,phi)
-                mu_boots[i][node.idx] = R.randomize() 
-                b_boots[i][node.idx] = b[node.idx]
-            mu = mu_boots[i]
-            bb = b_boots[i]
-            var_tau = cp.Variable(N)
-            W = np.diag([sqrt(s/x) for x in bb])
-            objective = cp.Minimize(cp.sum_squares( W @ (bb-np.diag(mu) @ var_tau)))
-            constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
-            prob = cp.Problem(objective,constraints)
-            options = {"mosek_params": {"MSK_IPAR_NUM_THREADS": threads}} if threads is not None else {}
-            f_star = _solve_logged(prob,cp.MOSEK,context="confidence intervals",**options)
-            tau_boots[i] = var_tau.value
-            # compute divergence time
-            for node in tree.traverse_postorder():
-                if not node.is_root():
-                    node.edge_length = tau_boots[i][node.idx]
-            compute_divergence_time(tree,smpl_times)
-            for node in tree.traverse_postorder():
-                divTime_boots[i][node.idx] = node.time
-            i = i+1    
-        except:
-            continue
+    print("Confidence intervals: estimating {} samples".format(nboots), flush=True)
+    for i in range(nboots):
+        started = time.monotonic()
+        print("CI sample {}/{}: drawing rates and solving".format(i+1, nboots), flush=True)
+        for node in tree.traverse_postorder():
+            if node.is_root():
+                continue
+            phi = [1/k]*k
+            R = multinomial(omega,phi)
+            mu_boots[i][node.idx] = R.randomize()
+            b_boots[i][node.idx] = b[node.idx]
+        mu = mu_boots[i]
+        bb = b_boots[i]
+        var_tau = cp.Variable(N)
+        W = np.diag([sqrt(s/x) for x in bb])
+        objective = cp.Minimize(cp.sum_squares(W @ (bb-np.diag(mu) @ var_tau)))
+        constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
+        prob = cp.Problem(objective,constraints)
+        failures = []
+        for solver in (cp.MOSEK, cp.OSQP, cp.CVXOPT, cp.ECOS):
+            print("CI sample {}/{}: trying {}".format(i+1, nboots, solver), flush=True)
+            options = {"mosek_params": {"MSK_IPAR_NUM_THREADS": threads}} if solver == cp.MOSEK and threads is not None else {}
+            try:
+                _solve_logged(prob, solver, context="confidence intervals", **options)
+            except Exception as exc:
+                failures.append("{}: {}: {}".format(solver, type(exc).__name__, " ".join(str(exc).split())))
+                continue
+            if prob.status != cp.OPTIMAL or var_tau.value is None or not np.all(np.isfinite(var_tau.value)):
+                failures.append("{}: status {}; missing or non-finite solution, or status not optimal".format(solver, prob.status))
+                continue
+            tau_boots[i] = var_tau.value.copy()
+            break
+        else:
+            raise RuntimeError(
+                "CI sample {}/{} failed with every solver. No new rates were drawn; "
+                "check solver availability, licenses, and calibration feasibility. {}".format(
+                    i+1, nboots, "; ".join(failures)))
+        for node in tree.traverse_postorder():
+            if not node.is_root():
+                node.edge_length = tau_boots[i][node.idx]
+        compute_divergence_time(tree,smpl_times)
+        for node in tree.traverse_postorder():
+            divTime_boots[i][node.idx] = node.time
+        print("CI sample {}/{}: completed with {} in {:.2f}s".format(
+            i+1, nboots, solver, time.monotonic()-started), flush=True)
 
     for node in tree.traverse_postorder():
         divTime_list = [divTime_boots[i][node.idx] for i in range(nboots)]

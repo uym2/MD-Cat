@@ -29,7 +29,8 @@ parser.add_argument("-p","--rep",required=False, help="The number of random repl
 parser.add_argument("-l","--seqLen",required=False, help="The length of the sequences. Default: 1000")
 parser.add_argument("-v","--verbose",action='store_true',help="Verbose")
 parser.add_argument("--maxIter",required=False,help="The maximum number of iterations for EM search. Default: 100")
-parser.add_argument("--CI",required=False,help="Turn on confidence interval estimation for branch lengths. Specify a three numbers n,l,u, where n is the number of repeating samplings of the mutation rate posteriors, l and u are the lower and upper quantiles of the CI one wishes to compute.")
+parser.add_argument("--CI", required=False, metavar='"N LOWER UPPER"',
+                    help='Estimate confidence intervals for branch lengths. Pass three space-separated numbers inside one pair of quotes (no commas): N is the number of posterior mutation-rate samples; LOWER and UPPER are quantiles on the 0-1 scale, not percentages. Example: --CI "100 0.025 0.975" uses 100 samples for a 95%% confidence interval. Default: off.')
 #parser.add_argument("--nSamplings",required=False,type=int,default=100,help="The number of repeating samplings on mutation rate posteriors to estimate the confidence interval for branch lengths. Default: 100")
 parser.add_argument("--randSeed",required=False,help="Random seed; either a number or a list of p numbers where p is the number of replicates specified by -p. Default: auto-select")
 parser.add_argument("--annotate",required=False,help="Annotation option. Select one of these options: 1: Annotate divergent times; 2: Annotate divergent times and expected mutation rates; 3: Annotate divergent times, expected mutation rates, and the full posterior distribution of the mutation rate. Default: 2")
