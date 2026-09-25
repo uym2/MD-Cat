@@ -202,6 +202,11 @@ replicates still run sequentially; `-p` controls the number of replicates.
 
 # Other useful options
 
+MD-Cat logs the solver that successfully solves an optimization problem, and
+reports solver failures (such as a missing MOSEK license) before fallback.
+Each solver outcome is printed once per run, separately for optimization and
+confidence intervals; `-v` is not required.
+
 The following options are useful to explore:
 
 * `-v` can be used to turn on the verbose mode.

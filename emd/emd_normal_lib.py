@@ -26,6 +26,27 @@ MIN_ll = -700 # minimum log-likelihood; due to overflow/underflow issue
 MIN_q = 1e-5
 nDIGITS = 4 # round up outputs to 4 digits
 
+_solver_messages = set()
+
+def _solve_logged(problem, solver, context="optimization", **options):
+    """Report each solver outcome once per MDCat run, without solver verbosity."""
+    def report(outcome, detail):
+        key = (context, solver, outcome)
+        if key not in _solver_messages:
+            _solver_messages.add(key)
+            print("Solver [{}]: {} {}".format(context, solver, detail), flush=True)
+
+    try:
+        value = problem.solve(verbose=False, solver=solver, **options)
+    except Exception as exc:
+        report("failed", "failed: " + " ".join(str(exc).split()))
+        raise
+    if problem.status == "optimal":
+        report("optimal", "is in use (status: optimal)")
+    else:
+        report(problem.status, "returned status: " + str(problem.status))
+    return value
+
 def initialize_rates(k,mu):
     omega = []
     phi = []
@@ -37,6 +58,7 @@ def initialize_rates(k,mu):
     return multinomial(omega,phi)
 
 def MDCat(tree,k,sampling_time=None,bw_time=False,as_date=False,root_time=0,leaf_time=1,nrep=100,maxIter=100,randseed=None,pseudo=1,s=1000,verbose=False,place_mu=True,place_q=False,refTree=None,fixed_tau=False,fixed_omega=False,init_Q=None,CI_options=None,threads=None):
+    _solver_messages.clear()
     smpl_times = setup_smpl_time(tree,sampling_time=sampling_time,bw_time=bw_time,as_date=as_date,root_time=root_time,leaf_time=leaf_time)   
     mu_avg = rtt_mu(tree,smpl_times)
     init_rate_distr = initialize_rates(k,mu_avg) 
@@ -775,7 +797,7 @@ def compute_tau_star_cvxpy(tau,omega,Q,b,s,M,dt,eps_tau=EPS_tau,var_apprx=False,
     for solver in solvers:
         try:    
             options = {"mosek_params": {"MSK_IPAR_NUM_THREADS": threads}} if solver == 'mosek' and threads is not None else {}
-            f_star = prob.solve(verbose=False,solver=solver_map[solver],**options)
+            f_star = _solve_logged(prob,solver_map[solver],**options)
         except:
             continue    
         if prob.status == "optimal":
@@ -835,7 +857,7 @@ def get_confidence_interval(tree,smpl_times,tau,omega,Q,b,s,M,dt,CI_options,eps_
             constraints = [np.zeros(N)+eps_tau <= var_tau, csr_matrix(M)@var_tau == np.array(dt)]
             prob = cp.Problem(objective,constraints)
             options = {"mosek_params": {"MSK_IPAR_NUM_THREADS": threads}} if threads is not None else {}
-            f_star = prob.solve(verbose=False,solver=cp.MOSEK,**options)
+            f_star = _solve_logged(prob,cp.MOSEK,context="confidence intervals",**options)
             tau_boots[i] = var_tau.value
             # compute divergence time
             for node in tree.traverse_postorder():
